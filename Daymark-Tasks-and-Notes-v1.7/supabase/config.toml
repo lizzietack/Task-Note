@@ -1,0 +1,2 @@
+[functions.daymark-deliver-notifications]
+verify_jwt = false
