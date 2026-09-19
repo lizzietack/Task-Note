@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, Bell, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight,
+  Archive, Bell, CalendarCheck2, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight,
   Circle, Clock3, File, FileText, Image as ImageIcon, Inbox, ListTodo, Menu, Mic, MoreHorizontal,
-  Paperclip, Pin, Play, Plus, Search, Sparkles, Square, Tag, Trash2, X, Zap, Cloud, RefreshCw, WifiOff, Mail, LockKeyhole, Users
+  NotebookPen, Paperclip, Pin, Play, Plus, Search, Sparkles, Square, Tag, Trash2, X, Cloud, RefreshCw, WifiOff, Mail, LockKeyhole, Users
 } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useDaymarkCloud } from './hooks/useDaymarkCloud';
@@ -10,7 +10,7 @@ import { useDaymarkAuth } from './hooks/useDaymarkAuth';
 import { useCollaboration } from './hooks/useCollaboration';
 import { migrateAccountCache } from './lib/accountCache';
 import { ContactsView, AssignedView, AssignedDetail, NotificationBell, CollaborationHealth, AssignmentPicker, TaskCollaboration } from './components/Collaboration';
-import { AccountSettings, ThemeSwitch, accountDisplayName } from './components/AccountSettings';
+import { AccountSettings, ProfileAvatar, ThemeSwitch, accountDisplayName } from './components/AccountSettings';
 
 const CATEGORIES = [
   { name: 'Personal', color: '#0F766E' },
@@ -122,7 +122,8 @@ function Workspace({auth}){
   const collaboration = useCollaboration(auth.session);
   const [assignedDetail, setAssignedDetail] = useState(null);
   const [accountSettings, setAccountSettings] = useState(false);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(null);
+  const claimStarted = useRef(false);
   const ownProfile = collaboration.profiles[auth.session.user.id];
   const displayName = accountDisplayName(ownProfile, auth.session.user);
   const navigateNotification = notification => {
@@ -131,8 +132,22 @@ function Workspace({auth}){
     if (a?.assignee_id === auth.session.user.id) { setTab('assigned'); setAssignedDetail(a.id); return; }
     const task = tasks.find(t => String(t.id) === String(notification.task_id));
     if (task) openTaskEditor(task);
-    else { setTab('assigned'); setNotice('This task is no longer available, or your access has changed.'); }
+    else { setTab('assigned'); setNotice({ tone: 'error', text: 'This task is no longer available, or your access has changed.' }); }
   };
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get('daymark_invite');
+    if (!token || claimStarted.current) return;
+    claimStarted.current = true;
+    collaboration.act('claimEmailInvite', token).then(result => {
+      setTab(result?.task_id ? 'assigned' : 'contacts');
+      setNotice({ tone: 'success', text: result?.task_id ? 'Invitation claimed. The task is ready for you to accept or decline.' : 'Invitation claimed. You are now connected on Daymark.' });
+    }).catch(error => setNotice({ tone: 'error', text: error.message || 'This invitation could not be claimed.' })).finally(() => {
+      url.searchParams.delete('daymark_invite');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    });
+  }, [collaboration.act]);
 
 
   useEffect(()=>{
@@ -170,6 +185,13 @@ function Workspace({auth}){
     return () => { document.body.style.overflow = previous; };
   }, [composer, editingTask, editingNote, assignedDetail, accountSettings]);
 
+  useEffect(() => {
+    if (!sidebar) return;
+    const closeOnEscape = event => { if (event.key === 'Escape') setSidebar(false); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [sidebar]);
+
   const openAdd=(mode='quick', defaults={})=>{setEditingTask(null);setEditingNote(null);setTaskDefaults(defaults);setComposerMode(mode);setComposer(true);};
   const openTaskEditor=(task)=>{setComposer(false);setComposerMode('quick');setTaskDefaults({});setEditingNote(null);setEditingTask(task);};
   const addTaskForDate=(date)=>{openAdd('task',{date,list:taskListForDate(date)});};
@@ -203,15 +225,19 @@ function Workspace({auth}){
     return updated;
   });
   const deleteTask=(id)=>{if(window.confirm('Delete this task? This cannot be undone.')){cloud.deleteEntity('task',id);setTasks(prev=>prev.filter(t=>String(t.id)!==String(id)));}};
-  const saveTask=async (task, assigneeId, onLocalSave)=>{
+  const saveTask=async (task, assigneeId, inviteEmail, onLocalSave)=>{
     const normalized={...task,id:task.id || crypto.randomUUID(),createdAt:task.createdAt || Date.now(),list:taskListForDate(task.date,task.list),updatedAt:Date.now()};
     setTasks(prev=>prev.some(t=>String(t.id)===String(normalized.id)) ? prev.map(t=>String(t.id)===String(normalized.id)?normalized:t) : [normalized,...prev]);
     onLocalSave?.(normalized);
-    if (assigneeId) {
+    if (assigneeId || inviteEmail) {
       try {
         await cloud.persistTask(normalized);
-        await collaboration.act('assign', normalized.id, assigneeId);
-      } catch (err) { throw new Error('Task saved. Assignment was not confirmed: ' + err.message + ' Check its status before retrying.'); }
+        if (assigneeId) await collaboration.act('assign', normalized.id, assigneeId);
+        if (inviteEmail) {
+          await collaboration.act('inviteTaskByEmail', inviteEmail, normalized.id, normalized.title);
+          setNotice({ tone: 'success', text: `Invitation sent to ${inviteEmail.trim().toLowerCase()}. They can join securely and accept or decline the task.` });
+        }
+      } catch (err) { throw new Error(`Task saved. ${inviteEmail ? 'Email invitation' : 'Assignment'} was not confirmed: ${err.message} Check its status before retrying.`); }
     }
     setEditingTask(null); setComposer(false); setTaskDefaults({});
   };
@@ -243,10 +269,11 @@ function Workspace({auth}){
   if (!cloud.session) return <AuthScreen signIn={cloud.signIn} signUp={cloud.signUp}/>;
 
   return <div className={dark?'app dark':'app'}>
-    <aside className={sidebar?'sidebar open':'sidebar'}>
-      <div className="brand"><div className="brand-mark"><CheckCircle2 size={22}/></div><div><strong>Daymark</strong><span>Tasks & notes</span></div><button className="icon mobile-close" onClick={()=>setSidebar(false)}><X/></button></div>
+    {sidebar && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={()=>setSidebar(false)}/>}
+    <aside id="daymark-sidebar" className={sidebar?'sidebar open':'sidebar'}>
+      <div className="brand"><div className="brand-mark"><CheckCircle2 size={22}/></div><div><strong>Daymark</strong><span>Tasks & notes</span></div><button className="icon mobile-close" aria-label="Close navigation panel" onClick={()=>setSidebar(false)}><X/></button></div>
       <nav className="nav">
-        <NavItem icon={Sparkles} label="Today" active={tab==='today'} count={counts.today} onClick={()=>{setTab('today');setSidebar(false)}}/>
+        <NavItem icon={CalendarCheck2} label="Today" active={tab==='today'} count={counts.today} onClick={()=>{setTab('today');setSidebar(false)}}/>
         <NavItem icon={ListTodo} label="Tasks" active={tab==='tasks'} onClick={()=>{setTab('tasks');setSidebar(false)}}/>
         <NavItem icon={Users} label="Assigned to me" active={tab==='assigned'} count={collaboration.assignments.filter(a=>a.assignee_id===auth.session.user.id && ['pending','accepted'].includes(a.status)).length} onClick={()=>{setTab('assigned');setSidebar(false)}}/>
         <NavItem icon={Users} label="Contacts" active={tab==='contacts'} count={collaboration.connections.filter(c=>c.addressee_id===auth.session.user.id && c.status==='pending').length} onClick={()=>{setTab('contacts');setSidebar(false)}}/>
@@ -261,21 +288,21 @@ function Workspace({auth}){
       </div>
       <div className="sidebar-bottom">
         <CloudStatus cloud={cloud}/>
-        <button className="sidebar-profile" onClick={()=>{setAccountSettings(true);setSidebar(false)}}><span className="profile-avatar small">{displayName.split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase()}</span><span className="account-copy"><strong>{displayName}</strong><span>Profile & settings</span></span><ChevronRight size={17}/></button>
-        <div className="sidebar-tip"><Zap size={18}/><div><strong>Capture first.</strong><span>Organize when you have time.</span></div></div>
+        <button className="sidebar-profile" onClick={()=>{setAccountSettings(true);setSidebar(false)}}><ProfileAvatar profile={ownProfile} user={auth.session.user} small/><span className="account-copy"><strong>{displayName}</strong><span>Profile & settings</span></span><ChevronRight size={17}/></button>
+        <div className="sidebar-tip"><NotebookPen size={18}/><div><strong>Capture first.</strong><span>Organize when you have time.</span></div></div>
       </div>
     </aside>
 
     <main className="main">
       <header className="topbar">
-        <button className="icon menu" onClick={()=>setSidebar(true)}><Menu/></button>
+        <button className="icon menu" aria-label="Open navigation" aria-expanded={sidebar} aria-controls="daymark-sidebar" onClick={()=>setSidebar(true)}><Menu/></button>
         <div className="top-spacer"/><NotificationBell c={collaboration} onNavigate={navigateNotification}/>
         <ThemeSwitch dark={dark} setDark={setDark} compact/>
         <button className="add-top" onClick={()=>openAdd('quick')}><Plus size={19}/> <span>Add</span></button>
       </header>
       <div className="content">
         <CollaborationHealth c={collaboration}/>
-        {notice && <div className="inline-error" role="status">{notice}<button className="text-btn" onClick={()=>setNotice('')}>Dismiss</button></div>}
+        {notice && <div className={notice.tone === 'success' ? 'inline-success app-notice' : 'inline-error app-notice'} role="status">{notice.text}<button className="text-btn" onClick={()=>setNotice(null)}>Dismiss</button></div>}
         {tab==='contacts' && <ContactsView c={collaboration}/>}
         {tab==='assigned' && <AssignedView c={collaboration} onOpen={setAssignedDetail}/>}
         {tab==='today' && <TodayView tasks={tasks} notes={notes} completeTask={completeTask} setEditingTask={openTaskEditor} setEditingNote={openNoteEditor} toggleNoteChecklist={toggleNoteChecklist} openAdd={openAdd} setTab={setTab}/>} 
@@ -318,7 +345,7 @@ function TodayView({tasks,notes,completeTask,setEditingTask,setEditingNote,toggl
     {later.length>0&&<TaskSection title="Later today" tasks={later} completeTask={completeTask} edit={setEditingTask}/>} 
     <div className="section-row"><div><h2>Pinned notes</h2><p>Things you want within reach.</p></div><button className="text-btn" onClick={()=>setTab('notes')}>See all</button></div>
     <div className="notes-grid compact">{pinned.length?pinned.map(n=><NoteCard key={n.id} note={n} onClick={()=>setEditingNote(n)} onToggleChecklist={itemId=>toggleNoteChecklist(n.id,itemId)}/>):<EmptyCard title="Pin the things you reach for often" text="Important numbers, shopping lists, ideas and references can live here."/>}</div>
-    <div className="capture-banner"><div className="capture-icon"><Zap/></div><div><strong>Got something on your mind?</strong><span>Capture it before it disappears. You can organize it later.</span></div><button onClick={()=>openAdd('quick')}>Add something</button></div>
+    <div className="capture-banner"><div className="capture-icon"><NotebookPen/></div><div><strong>Got something on your mind?</strong><span>Capture it before it disappears. You can organize it later.</span></div><button onClick={()=>openAdd('quick')}>Add something</button></div>
   </>
 }
 
@@ -399,12 +426,13 @@ function TaskEditor({task,defaults={},onSave,onClose,collaboration}){
   const [v,setV]=useState(()=>({...{title:'',completed:false,date:'',time:'',priority:'medium',category:'Personal',list:'inbox',repeat:'none',reminder:'None',note:'',subtasks:[],source:{type:'manual'}},...defaults,...(task||{})}));
   const [reminderStatus,setReminderStatus]=useState('');
   const [assigneeId,setAssigneeId]=useState('');
+  const [inviteEmail,setInviteEmail]=useState('');
   const [saving,setSaving]=useState(false), [saveError,setSaveError]=useState('');
   const savingRef=useRef(false);
-  const save=async()=>{if(savingRef.current)return;savingRef.current=true;setSaving(true);setSaveError('');try{await onSave(v,assigneeId,setV)}catch(err){setSaveError(err.message)}finally{savingRef.current=false;setSaving(false)}};
+  const save=async()=>{if(savingRef.current)return;savingRef.current=true;setSaving(true);setSaveError('');try{await onSave(v,assigneeId,inviteEmail.trim(),setV)}catch(err){setSaveError(err.message)}finally{savingRef.current=false;setSaving(false)}};
   const set=(k,val)=>setV(x=>({...x,[k]:val}));
   const setReminder=async value=>{set('reminder',value);if(value==='None')return;if(!('Notification' in window)){setReminderStatus('Browser notifications are not supported on this device.');return;}if(Notification.permission==='default'){const permission=await Notification.requestPermission();setReminderStatus(permission==='granted'?'Browser reminders are enabled.':'Notifications were not allowed. You can change this in browser settings.');}else if(Notification.permission==='denied'){setReminderStatus('Notifications are blocked in browser settings.');}else{setReminderStatus('Browser reminders are enabled.');}};
-  return <div className="modal editor-modal"><div className="modal-head"><div><span className="eyebrow">{isEditing?'EDIT TASK':'NEW TASK'}</span><h2>{isEditing?'Keep it useful.':'What needs doing?'}</h2></div><button className="icon" onClick={onClose}><X/></button></div><div className="form"><label>Task<input autoFocus value={v.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Renew car insurance"/></label><div className="form-row"><label>Date<input type="date" value={v.date} onChange={e=>{const date=e.target.value;setV(x=>({...x,date,list:taskListForDate(date,x.list)}))}}/></label><label>Time<input type="time" value={v.time} onChange={e=>set('time',e.target.value)}/></label></div><div className="form-row"><label>List<select value={v.list} onChange={e=>{const list=e.target.value;setV(x=>({...x,list,date:list==='today'&&!x.date?isoToday():x.date}))}}><option value="inbox">Inbox</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="later">Later</option></select></label><label>Priority<select value={v.priority} onChange={e=>set('priority',e.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label></div><div className="form-row"><label>Category<select value={v.category} onChange={e=>set('category',e.target.value)}>{CATEGORIES.map(c=><option key={c.name}>{c.name}</option>)}</select></label><label>Repeat<select value={v.repeat} onChange={e=>set('repeat',e.target.value)}><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label></div><label>Reminder<select value={v.reminder} onChange={e=>setReminder(e.target.value)}><option>None</option><option>At time</option><option>10 minutes before</option><option>30 minutes before</option><option>1 hour before</option><option>1 day before</option><option>Keep reminding until completed</option></select><small className="field-help">{reminderStatus||'Browser reminders work while Daymark is running. Installed/native background reminders require platform scheduling.'}</small></label><label>Short note<textarea value={v.note} onChange={e=>set('note',e.target.value)} placeholder="Optional context…"/></label><SubtaskEditor items={v.subtasks} setItems={items=>set('subtasks',items)}/><AssignmentPicker c={collaboration} taskId={v.id} value={assigneeId} onChange={setAssigneeId} disabled={saving}/>{v.id && <TaskCollaboration c={collaboration} taskId={v.id}/>}<p className="field-help">Assigned people can see the task title, schedule, note and subtasks.</p>{saveError&&<p className="inline-error" role="alert">{saveError}</p>}</div><div className="modal-foot"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!v.title.trim() || saving || (assigneeId && !collaboration.available)} onClick={save}>{saving?'Saving…':'Save task'}</button></div></div>
+  return <div className="modal editor-modal" role="dialog" aria-modal="true" aria-labelledby="task-editor-title"><div className="modal-head"><div><span className="eyebrow">{isEditing?'EDIT TASK':'NEW TASK'}</span><h2 id="task-editor-title">{isEditing?'Keep it useful.':'What needs doing?'}</h2></div><button className="icon" aria-label="Close task editor" onClick={onClose}><X/></button></div><div className="form"><label>Task<input autoFocus value={v.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Renew car insurance"/></label><div className="form-row"><label>Date<input type="date" value={v.date} onChange={e=>{const date=e.target.value;setV(x=>({...x,date,list:taskListForDate(date,x.list)}))}}/></label><label>Time<input type="time" value={v.time} onChange={e=>set('time',e.target.value)}/></label></div><div className="form-row"><label>List<select value={v.list} onChange={e=>{const list=e.target.value;setV(x=>({...x,list,date:list==='today'&&!x.date?isoToday():x.date}))}}><option value="inbox">Inbox</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="later">Later</option></select></label><label>Priority<select value={v.priority} onChange={e=>set('priority',e.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label></div><div className="form-row"><label>Category<select value={v.category} onChange={e=>set('category',e.target.value)}>{CATEGORIES.map(c=><option key={c.name}>{c.name}</option>)}</select></label><label>Repeat<select value={v.repeat} onChange={e=>set('repeat',e.target.value)}><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label></div><label>Reminder<select value={v.reminder} onChange={e=>setReminder(e.target.value)}><option>None</option><option>At time</option><option>10 minutes before</option><option>30 minutes before</option><option>1 hour before</option><option>1 day before</option><option>Keep reminding until completed</option></select><small className="field-help">{reminderStatus||'Browser reminders work while Daymark is running. Installed/native background reminders require platform scheduling.'}</small></label><label>Short note<textarea value={v.note} onChange={e=>set('note',e.target.value)} placeholder="Optional context…"/></label><SubtaskEditor items={v.subtasks} setItems={items=>set('subtasks',items)}/><AssignmentPicker c={collaboration} taskId={v.id} value={assigneeId} onChange={setAssigneeId} inviteEmail={inviteEmail} onInviteEmail={setInviteEmail} disabled={saving}/>{v.id && <TaskCollaboration c={collaboration} taskId={v.id}/>}<p className="field-help">Assigned people can see the task title, schedule, note and subtasks.</p>{saveError&&<p className="inline-error" role="alert">{saveError}</p>}</div><div className="modal-foot"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!v.title.trim() || saving || ((assigneeId || inviteEmail.trim()) && !collaboration.available)} onClick={save}>{saving?'Saving…':'Save task'}</button></div></div>
 }
 
 function SubtaskEditor({items,setItems}){

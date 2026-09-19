@@ -42,5 +42,30 @@ export function useDaymarkAuth() {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
   }, []);
-  return { session, authLoading, configured: isSupabaseConfigured, signIn, signUp, signOut, updateDisplayName, updateEmail, updatePassword };
+  const updateAvatar = useCallback(async file => {
+    if (!session?.user?.id) throw new Error('Your session has expired. Sign in and try again.');
+    if (!file?.type?.startsWith('image/')) throw new Error('Choose an image file.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('Choose an image smaller than 5 MB.');
+    const path = `${session.user.id}/avatar`;
+    const { error: uploadError } = await supabase.storage.from('daymark-avatars').upload(path, file, { upsert: true, contentType: file.type, cacheControl: '3600' });
+    if (uploadError) throw uploadError;
+    const { data } = supabase.storage.from('daymark-avatars').getPublicUrl(path);
+    const avatarUrl = `${data.publicUrl}?v=${Date.now()}`;
+    const { error: profileError } = await supabase.from('profiles').update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() }).eq('id', session.user.id);
+    if (profileError) throw profileError;
+    const { error: authError } = await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
+    if (authError) throw authError;
+    return avatarUrl;
+  }, [session?.user?.id]);
+  const removeAvatar = useCallback(async () => {
+    if (!session?.user?.id) throw new Error('Your session has expired. Sign in and try again.');
+    const path = `${session.user.id}/avatar`;
+    const { error: removeError } = await supabase.storage.from('daymark-avatars').remove([path]);
+    if (removeError && !/not found/i.test(removeError.message || '')) throw removeError;
+    const { error: profileError } = await supabase.from('profiles').update({ avatar_url: null, updated_at: new Date().toISOString() }).eq('id', session.user.id);
+    if (profileError) throw profileError;
+    const { error: authError } = await supabase.auth.updateUser({ data: { avatar_url: null } });
+    if (authError) throw authError;
+  }, [session?.user?.id]);
+  return { session, authLoading, configured: isSupabaseConfigured, signIn, signUp, signOut, updateDisplayName, updateEmail, updatePassword, updateAvatar, removeAvatar };
 }

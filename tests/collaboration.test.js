@@ -46,6 +46,28 @@ test('RPC permission errors reach the UI instead of reporting success', async ()
   const api = collaborationApi({ rpc: async () => ({ error: new Error('Not an accepted contact') }) }, 'me');
   await assert.rejects(api.assign('t', 'stranger'), /Not an accepted contact/);
 });
+test('unknown emails receive a secure Supabase magic-link invitation without a service-role client', async () => {
+  const calls = [], otp = [];
+  const previousWindow = globalThis.window;
+  globalThis.window = { location: { origin: 'https://daymark.example' } };
+  try {
+    const client = {
+      rpc: async (name, args) => {
+        calls.push({name,args});
+        if (name === 'daymark_invite_contact') return { data:null, error:{message:'No Daymark user found with that email'} };
+        if (name === 'daymark_create_email_invite') return { data:[{invite_id:'invite-1',invite_token:'secure-token',expires_at:'2026-10-03T00:00:00Z'}], error:null };
+        return {data:null,error:null};
+      },
+      auth: { signInWithOtp: async payload => { otp.push(payload); return {error:null}; } },
+    };
+    const result=await collaborationApi(client,'me').inviteAny(' New.Person@example.com ');
+    assert.equal(result.delivery,'email');
+    assert.equal(otp[0].email,'new.person@example.com');
+    assert.equal(otp[0].options.shouldCreateUser,true);
+    assert.match(otp[0].options.emailRedirectTo,/daymark_invite=secure-token/);
+    assert.deepEqual(calls[1],{name:'daymark_create_email_invite',args:{invitee_email:'new.person@example.com',target_task:null}});
+  } finally { globalThis.window = previousWindow; }
+});
 test('comments validate length and insert only caller-authored task comments', async () => {
   let inserted;
   const api = collaborationApi({ from: name => { assert.equal(name, 'task_comments'); return { insert: async row => { inserted = row; return { data: null }; } }; } }, 'me');

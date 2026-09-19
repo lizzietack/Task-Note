@@ -1,21 +1,23 @@
 import { test, expect } from '@playwright/test';
 import { setup, ME, OTHER, THIRD } from './fixtures';
 
-test('contacts accept and decline, exact email invitation errors, eligible recipients', async ({ page }) => {
-  const { db, errors } = await setup(page);
+test('contacts accept requests and invite both existing and new users by email', async ({ page }) => {
+  const { db, calls, errors } = await setup(page);
   await page.getByRole('button', { name:'Contacts', exact:false }).click();
   await page.getByRole('button', { name:'Accept', exact:true }).click();
   expect(db.connections.find(c=>c.id==='c2').status).toBe('accepted');
-  await page.getByLabel('Invite a Daymark user by email').fill('missing@example.com');
-  await page.getByRole('button',{name:'Send request'}).click();
-  await expect(page.getByRole('alert')).toContainText('No Daymark user found');
+  await page.getByLabel('Invite someone by email').fill('missing@example.com');
+  await page.getByRole('button',{name:'Send invitation'}).click();
+  await expect(page.getByText('Invitation email sent.',{exact:false})).toBeVisible();
+  expect(db.daymark_email_invites.find(invite=>invite.invitee_email==='missing@example.com')).toBeTruthy();
+  expect(calls.some(call=>call.path.endsWith('/auth/v1/otp')&&call.body?.email==='missing@example.com')).toBe(true);
   db.profiles.push({ id:'44444444-4444-4444-8444-444444444444', display_name:'New colleague',email:'new@example.com' });
-  await page.getByLabel('Invite a Daymark user by email').fill('new@example.com');
-  await page.getByRole('button',{name:'Send request'}).click();
+  await page.getByLabel('Invite someone by email').fill('new@example.com');
+  await page.getByRole('button',{name:'Send invitation'}).click();
   await expect(page.getByText('Contact request sent.',{exact:false})).toBeVisible();
   await page.getByRole('button',{name:'Tasks',exact:true}).click();
   await page.getByRole('button',{name:'New task',exact:true}).click();
-  await expect(page.getByLabel('Assign to (optional)').locator('option')).toHaveCount(3);
+  await expect(page.getByLabel('Assign to a contact').locator('option')).toHaveCount(3);
   expect(errors).toEqual([]);
 });
 
@@ -24,7 +26,7 @@ test('owner creates and assigns once; failed assignment preserves the saved task
   await page.getByRole('button',{name:'Tasks',exact:true}).click();
   await page.getByRole('button',{name:'New task',exact:true}).click();
   await page.getByLabel('Task',{exact:true}).fill('Prepare monthly report');
-  await page.getByLabel('Assign to (optional)').selectOption(OTHER);
+  await page.getByLabel('Assign to a contact').selectOption(OTHER);
   state.failNextAssignment();
   await page.getByRole('button',{name:'Save task',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('Task saved. Assignment was not confirmed');
@@ -36,6 +38,33 @@ test('owner creates and assigns once; failed assignment preserves the saved task
   await page.getByRole('button',{name:'Prepare monthly report',exact:false}).click();
   await expect(page.getByText('You own this task')).toBeVisible();
   await expect(page.getByText('pending',{exact:true})).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test('owner can email a task to someone who has not joined Daymark yet', async ({ page }) => {
+  const state = await setup(page);
+  await page.getByRole('button',{name:'Tasks',exact:true}).click();
+  await page.getByRole('button',{name:'New task',exact:true}).click();
+  await page.getByLabel('Task',{exact:true}).fill('Confirm venue booking');
+  await page.getByLabel('Invite by email').fill('remote@example.org');
+  await page.getByRole('button',{name:'Save task',exact:true}).click();
+  await expect(page.getByText('Invitation sent to remote@example.org',{exact:false})).toBeVisible();
+  const invitation=state.db.daymark_email_invites.find(invite=>invite.invitee_email==='remote@example.org');
+  expect(invitation?.task_id).toBeTruthy();
+  expect(state.calls.some(call=>call.path.endsWith('/auth/v1/otp')&&call.body?.email==='remote@example.org')).toBe(true);
+  expect(state.errors).toEqual([]);
+});
+
+test('recipient claims an emailed task and can accept or decline it in real time', async ({ page }) => {
+  const state = await setup(page);
+  state.db.task_assignments = [];
+  state.addEmailInvite({inviter_id:OTHER,invitee_email:'raphael@example.com',task_id:'shared-task',mock_token:'join-token'});
+  await page.goto('/?daymark_invite=join-token');
+  await expect(page.getByText('Invitation claimed.',{exact:false})).toBeVisible();
+  await expect(page).toHaveURL(/^(?!.*daymark_invite)/);
+  await expect(page.getByRole('button',{name:'Send payment receipt',exact:true})).toBeVisible();
+  expect(state.db.connections.some(connection=>connection.status==='accepted'&&[connection.requester_id,connection.addressee_id].includes(OTHER)&&[connection.requester_id,connection.addressee_id].includes(ME))).toBe(true);
+  expect(state.db.task_assignments.some(assignment=>assignment.task_id==='shared-task'&&assignment.assignee_id===ME&&assignment.status==='pending')).toBe(true);
   expect(state.errors).toEqual([]);
 });
 
@@ -204,12 +233,33 @@ test('profile settings show the name, update identity and provide account securi
   await page.getByLabel('Confirm password').fill('new-password-123');
   await page.getByRole('button',{name:'Change password'}).click();
   await expect(page.locator('.settings-modal .inline-success')).toContainText('password has been changed');
+  await expect(page.getByRole('button',{name:'Choose photo'})).toBeEnabled();
+  await page.locator('.settings-modal input[type="file"]').setInputFiles({name:'profile.png',mimeType:'image/png',buffer:Buffer.from('profile-image')});
+  await expect(page.locator('.settings-modal .inline-success')).toContainText('profile photo has been updated');
+  await expect(page.locator('.settings-modal .profile-avatar img')).toBeVisible();
+  expect(state.db.profiles.find(profile=>profile.id===ME).avatar_url).toContain('/daymark-avatars/');
   expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.email==='raphael.new@example.com')).toBe(true);
   expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.password==='new-password-123')).toBe(true);
   await expect(page.getByRole('button',{name:'Sign out of Daymark'})).toBeVisible();
   await page.setViewportSize({width:390,height:844});
   await expect(page.getByRole('dialog',{name:'Profile & settings'})).toHaveCSS('width','390px');
   await page.screenshot({path:'test-results/mobile-profile-settings.png',animations:'disabled'});
+  expect(state.errors).toEqual([]);
+});
+
+test('mobile navigation uses purposeful icons and closes when the user taps outside', async ({page})=>{
+  const state=await setup(page);
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('button.menu').click();
+  await expect(page.locator('.sidebar')).toHaveClass(/open/);
+  const todayIcon=page.locator('.nav-item').filter({hasText:'Today'}).locator('svg');
+  const captureIcon=page.locator('.sidebar-tip svg');
+  await expect(todayIcon).toBeVisible(); await expect(captureIcon).toBeVisible();
+  expect(await todayIcon.getAttribute('class')).toContain('calendar-check');
+  expect(await captureIcon.getAttribute('class')).toContain('notebook-pen');
+  await page.screenshot({path:'test-results/mobile-sidebar-v16.png',animations:'disabled'});
+  await page.getByRole('button',{name:'Close navigation'}).click({position:{x:370,y:400}});
+  await expect(page.locator('.sidebar')).not.toHaveClass(/open/);
   expect(state.errors).toEqual([]);
 });
 

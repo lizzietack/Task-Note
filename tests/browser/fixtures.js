@@ -7,15 +7,15 @@ const task = (id, owner, title) => ({ id, user_id: owner, title, completed: fals
 
 export async function setup(page, userId = ME) {
   const db = {
-    profiles: [{ id: ME, display_name: 'Raphael', email: 'raphael@example.com' }, { id: OTHER, display_name: 'Herbert', email: 'herbert@example.com' }, { id: THIRD, display_name: 'Nana', email: 'nana@example.com' }],
+    profiles: [{ id: ME, display_name: 'Raphael', email: 'raphael@example.com', avatar_url: null }, { id: OTHER, display_name: 'Herbert', email: 'herbert@example.com', avatar_url: null }, { id: THIRD, display_name: 'Nana', email: 'nana@example.com', avatar_url: null }],
     connections: [{ id: 'c1', requester_id: ME, addressee_id: OTHER, status: 'accepted', created_at: now }, { id: 'c2', requester_id: THIRD, addressee_id: ME, status: 'pending', created_at: now }],
     tasks: [task('owned-task', ME, 'Review supplier payment'), task('shared-task', OTHER, 'Send payment receipt')],
     task_assignments: [{ id: 'a1', task_id: 'shared-task', owner_id: OTHER, assignee_id: ME, status: 'pending', assigned_at: now }],
-    task_comments: [], notifications: [], notes: [], attachments: [], deleted_items: [],
+    task_comments: [], notifications: [], daymark_email_invites: [], notes: [], attachments: [], deleted_items: [],
   };
   const calls = [], channels = [];
   let current = userId, failAssign = false;
-  const session = uid => { const person=db.profiles.find(p => p.id === uid); return { access_token: `${btoa('{}')}.${btoa(JSON.stringify({ sub: uid, role:'authenticated', exp: 4102444800 }))}.test`, refresh_token: 'test-refresh', expires_in: 3600, expires_at: 4102444800, token_type: 'bearer', user: { id: uid, email: person.email, user_metadata:{display_name:person.display_name}, aud: 'authenticated', role: 'authenticated' } }; };
+  const session = uid => { const person=db.profiles.find(p => p.id === uid); return { access_token: `${btoa('{}')}.${btoa(JSON.stringify({ sub: uid, role:'authenticated', exp: 4102444800 }))}.test`, refresh_token: 'test-refresh', expires_in: 3600, expires_at: 4102444800, token_type: 'bearer', user: { id: uid, email: person.email, user_metadata:{display_name:person.display_name,avatar_url:person.avatar_url}, aud: 'authenticated', role: 'authenticated' } }; };
   await page.addInitScript(({ session, userId }) => {
     localStorage.setItem('sb-daymark-test-auth-token', JSON.stringify(session));
     localStorage.setItem(`daymark.${userId}.tasks.v1`, '[]'); localStorage.setItem(`daymark.${userId}.notes.v1`, '[]');
@@ -42,17 +42,22 @@ export async function setup(page, userId = ME) {
   });
   await page.route('https://daymark-test.supabase.co/**', async route => {
     const request = route.request(), url = new URL(request.url()), method = request.method();
-    const body = request.postData() ? JSON.parse(request.postData()) : null;
+    const postData=request.postData(); let body=null;
+    if(postData){try{body=JSON.parse(postData);}catch{body=postData;}}
     const ok = (data, status = 200, headers = {}) => route.fulfill({ status, contentType: 'application/json', headers: { 'access-control-expose-headers': 'content-range', ...headers }, body: status === 204 ? '' : JSON.stringify(data) });
     const bad = message => ok({ message, code:'P0001' }, 400);
     calls.push({ path: url.pathname, method, body, query: url.search });
+    if (url.pathname.startsWith('/storage/v1/object/daymark-avatars/')) return ok({ Key:url.pathname });
+    if (url.pathname.startsWith('/storage/v1/object/public/daymark-avatars/')) return route.fulfill({ status:200, contentType:'image/png', body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64') });
     if (url.pathname.includes('/auth/')) {
       if (url.pathname.endsWith('/logout')) return ok({}, 204);
+      if (url.pathname.endsWith('/otp')) return ok({});
       if (url.pathname.endsWith('/token')) { current = db.profiles.find(p => p.email === body.email)?.id || current; return ok(session(current)); }
       if (url.pathname.endsWith('/user') && method === 'PUT') {
         const person=db.profiles.find(p=>p.id===current);
         if(body?.email) person.email=body.email;
         if(body?.data?.display_name) person.display_name=body.data.display_name;
+        if(Object.prototype.hasOwnProperty.call(body?.data||{},'avatar_url')) person.avatar_url=body.data.avatar_url;
         return ok(session(current).user);
       }
       return ok(session(current).user);
@@ -65,6 +70,25 @@ export async function setup(page, userId = ME) {
         if (person.id === current) return bad('You cannot add yourself');
         if (db.connections.some(c => [c.requester_id,c.addressee_id].includes(current) && [c.requester_id,c.addressee_id].includes(person.id))) return bad('A Daymark contact relationship already exists');
         db.connections.push({ id:'new-c', requester_id:current, addressee_id:person.id, status:'pending' }); return ok('new-c');
+      }
+      if (name === 'daymark_create_email_invite') {
+        const existing=db.daymark_email_invites.find(i=>i.inviter_id===current&&i.invitee_email===body.invitee_email&&i.task_id===body.target_task&&i.status==='pending');
+        const invite=existing||{id:`invite-${db.daymark_email_invites.length+1}`,inviter_id:current,invitee_email:body.invitee_email,task_id:body.target_task,status:'pending',created_at:now,expires_at:'2026-10-03T08:00:00Z'};
+        invite.mock_token=`token-${invite.id}`; if(!existing)db.daymark_email_invites.push(invite);
+        return ok([{invite_id:invite.id,invite_token:invite.mock_token,expires_at:invite.expires_at}]);
+      }
+      if (name === 'daymark_cancel_email_invite') {
+        const invite=db.daymark_email_invites.find(i=>i.id===body.target_invite&&i.inviter_id===current&&i.status==='pending');
+        if(!invite)return bad('Invitation is no longer available'); invite.status='cancelled'; return ok(null);
+      }
+      if (name === 'daymark_claim_email_invite') {
+        const invite=db.daymark_email_invites.find(i=>i.mock_token===body.invite_token&&i.invitee_email===db.profiles.find(p=>p.id===current)?.email&&i.status==='pending');
+        if(!invite)return bad('This invitation is no longer available');
+        let connection=db.connections.find(c=>[c.requester_id,c.addressee_id].includes(invite.inviter_id)&&[c.requester_id,c.addressee_id].includes(current));
+        if(!connection){connection={id:`claimed-c-${db.connections.length}`,requester_id:invite.inviter_id,addressee_id:current,status:'accepted'};db.connections.push(connection);}else connection.status='accepted';
+        let assignment=null;
+        if(invite.task_id){assignment={id:`claimed-a-${db.task_assignments.length}`,task_id:invite.task_id,owner_id:invite.inviter_id,assignee_id:current,status:'pending',assigned_at:now};db.task_assignments.push(assignment);}
+        invite.status='claimed'; invite.claimed_by=current; return ok({invite_id:invite.id,connection_id:connection.id,task_id:invite.task_id,assignment_id:assignment?.id||null});
       }
       if (name === 'daymark_respond_contact') { db.connections.find(c=>c.id===body.target_connection).status=body.response; return ok(null); }
       if (name === 'daymark_assign_task') {
@@ -85,6 +109,7 @@ export async function setup(page, userId = ME) {
     if (table === 'tasks') rows = rows.filter(t => t.user_id === current || db.task_assignments.some(a => a.task_id === t.id && a.assignee_id === current && ['pending','accepted','completed'].includes(a.status)));
     if (table === 'notes') rows = rows.filter(n=>n.user_id===current);
     if (table === 'task_assignments') rows=rows.filter(a=>a.owner_id===current||a.assignee_id===current);
+    if (table === 'daymark_email_invites') rows=rows.filter(invite=>invite.inviter_id===current);
     for (const [field,value] of url.searchParams) {
       if (value.startsWith('eq.')) rows=rows.filter(r=>String(r[field])===value.slice(3));
       if (value.startsWith('neq.')) rows=rows.filter(r=>String(r[field])!==value.slice(4));
@@ -103,5 +128,5 @@ export async function setup(page, userId = ME) {
   });
   const errors=[]; page.on('pageerror', error=>errors.push(error.message));
   await page.goto('/'); await expect(page.getByText('Collaboration connected', {exact:false})).toBeVisible();
-  return { db, calls, emit, errors, failNextAssignment: () => { failAssign=true; } };
+  return { db, calls, emit, errors, failNextAssignment: () => { failAssign=true; }, addEmailInvite: invite => db.daymark_email_invites.push({id:`incoming-${db.daymark_email_invites.length}`,status:'pending',created_at:now,expires_at:'2026-10-03T08:00:00Z',...invite}) };
 }

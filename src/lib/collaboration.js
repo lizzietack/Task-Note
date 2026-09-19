@@ -28,8 +28,40 @@ export async function allRows(makeQuery) {
 
 export function collaborationApi(client, userId) {
   const rpc = (name, args) => checked(client.rpc(name, args));
+  const emailInvitation = async (email, taskId = null, taskTitle = '') => {
+    const normalized = email.trim().toLowerCase();
+    const response = await rpc('daymark_create_email_invite', { invitee_email: normalized, target_task: taskId ? String(taskId) : null });
+    const invitation = Array.isArray(response) ? response[0] : response;
+    if (!invitation?.invite_token || !invitation?.invite_id) throw new Error('Daymark could not create the secure invitation.');
+    const redirect = new URL(window.location.origin);
+    redirect.searchParams.set('daymark_invite', invitation.invite_token);
+    const { error } = await client.auth.signInWithOtp({
+      email: normalized,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: redirect.toString(),
+        data: { daymark_invitation: true, task_title: taskTitle || undefined },
+      },
+    });
+    if (error) {
+      try { await rpc('daymark_cancel_email_invite', { target_invite: invitation.invite_id }); } catch {}
+      if (error.code === 'email_address_not_authorized' || /email address not authorized/i.test(error.message || '')) throw new Error('Email delivery is not configured for public invitations yet. Ask the Daymark administrator to enable custom SMTP in Supabase.');
+      throw error;
+    }
+    return invitation;
+  };
   return {
     invite: email => rpc('daymark_invite_contact', { invitee_email: email.trim() }),
+    inviteAny: async email => {
+      try { await rpc('daymark_invite_contact', { invitee_email: email.trim() }); return { delivery: 'in_app' }; }
+      catch (error) {
+        if (!/no daymark user found/i.test(error.message || '')) throw error;
+        return { delivery: 'email', ...(await emailInvitation(email)) };
+      }
+    },
+    inviteTaskByEmail: (email, taskId, taskTitle) => emailInvitation(email, taskId, taskTitle),
+    cancelEmailInvite: id => rpc('daymark_cancel_email_invite', { target_invite: id }),
+    claimEmailInvite: token => rpc('daymark_claim_email_invite', { invite_token: token }),
     respondContact: (id, response) => {
       if (!['accepted', 'declined'].includes(response)) throw new Error('Invalid response');
       return rpc('daymark_respond_contact', { target_connection: id, response });

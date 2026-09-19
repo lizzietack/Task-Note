@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Camera, Check, Trash2, X } from 'lucide-react';
 
 function friendlyEmailName(email = '') {
   return email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) || 'Daymark user';
@@ -7,6 +7,14 @@ function friendlyEmailName(email = '') {
 
 export function accountDisplayName(profile, user) {
   return profile?.display_name?.trim() || user?.user_metadata?.display_name?.trim() || friendlyEmailName(user?.email);
+}
+
+export function ProfileAvatar({ profile, user, small = false }) {
+  const source = profile?.avatar_url || user?.user_metadata?.avatar_url || '';
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [source]);
+  const initials = accountDisplayName(profile, user).split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+  return <span className={small ? 'profile-avatar small' : 'profile-avatar'}>{source && !failed ? <img src={source} alt="" onError={() => setFailed(true)}/> : initials}</span>;
 }
 
 function SettingsSection({ title, description, children }) {
@@ -21,6 +29,7 @@ export function ThemeSwitch({ dark, setDark, compact = false }) {
 
 export function AccountSettings({ auth, profile, dark, setDark, onSaved, onClose }) {
   const dialogRef = useRef(null);
+  const photoRef = useRef(null);
   const [name, setName] = useState(() => accountDisplayName(profile, auth.session.user));
   const [email, setEmail] = useState(auth.session.user.email || '');
   const [password, setPassword] = useState(''), [confirm, setConfirm] = useState('');
@@ -41,9 +50,14 @@ export function AccountSettings({ auth, profile, dark, setDark, onSaved, onClose
     <div className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" ref={dialogRef} tabIndex={-1} onKeyDown={event => { if (event.key === 'Escape') onClose(); }}>
       <div className="modal-head"><div><span className="eyebrow">ACCOUNT</span><h2 id="settings-title">Profile & settings</h2></div><button type="button" className="icon" aria-label="Close settings" onClick={onClose}><X/></button></div>
       <div className="settings-body">
-        <div className="profile-summary"><div className="profile-avatar">{accountDisplayName(profile, auth.session.user).split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()}</div><div><strong>{accountDisplayName(profile, auth.session.user)}</strong><span>{auth.session.user.email}</span></div></div>
+        <div className="profile-summary"><ProfileAvatar profile={profile} user={auth.session.user}/><div><strong>{accountDisplayName(profile, auth.session.user)}</strong><span>{auth.session.user.email}</span></div></div>
         {error && <p className="inline-error" role="alert">{error}</p>}
         {message && <p className="inline-success" role="status"><Check size={15}/>{message}</p>}
+        <SettingsSection title="Profile photo" description="Optional. Your contacts will see this image beside your name.">
+          <input ref={photoRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={event => { const file = event.target.files?.[0]; if (file) run('avatar', () => auth.updateAvatar(file), 'Your profile photo has been updated.'); event.target.value = ''; }}/>
+          <div className="photo-actions"><button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => photoRef.current?.click()}><Camera size={16}/>{busy === 'avatar' ? 'Uploading…' : 'Choose photo'}</button>{(profile?.avatar_url || auth.session.user.user_metadata?.avatar_url) && <button type="button" className="text-btn danger-text" disabled={Boolean(busy)} onClick={() => run('remove-avatar', auth.removeAvatar, 'Your profile photo has been removed.')}><Trash2 size={15}/>{busy === 'remove-avatar' ? 'Removing…' : 'Remove photo'}</button>}</div>
+          <small className="field-help">PNG, JPEG, WebP or GIF, up to 5 MB.</small>
+        </SettingsSection>
         <SettingsSection title="Display name" description="This is the name your Daymark contacts see.">
           <label>Name<input value={name} maxLength={80} autoComplete="name" onChange={event => setName(event.target.value)}/></label>
           <button type="button" className="secondary" disabled={Boolean(busy) || name.trim() === accountDisplayName(profile, auth.session.user)} onClick={() => run('name', () => auth.updateDisplayName(name), 'Your name has been updated.')}>{busy === 'name' ? 'Saving…' : 'Save name'}</button>

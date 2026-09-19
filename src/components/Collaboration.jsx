@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bell, Check, MessageCircle, Users, X } from 'lucide-react';
 import { assignmentActions, canComment, personName } from '../lib/collaboration';
+import { ProfileAvatar } from './AccountSettings';
 
 export function Status({ status }) { return <span className={`collab-status ${status}`}>{status}</span>; }
 
@@ -33,16 +34,19 @@ export function ContactsView({ c }) {
     ['Past requests', c.connections.filter(x => ['declined', 'cancelled'].includes(x.status))],
   ];
   return <>
-    <div className="page-head"><div><span className="eyebrow">WORK TOGETHER</span><h1>Contacts</h1><p>Connect first, then send each other tasks.</p></div><Users size={28}/></div>
-    <form className="collab-invite" onSubmit={e => { e.preventDefault(); run(async () => { setMessage(''); await c.act('invite', email); setEmail(''); setMessage('Contact request sent. They can accept it in Daymark.'); }); }}>
-      <label htmlFor="contact-email">Invite a Daymark user by email</label>
-      <div className="collab-actions"><input id="contact-email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="coworker@example.com"/><button className="primary" disabled={busy || !c.available || !email.trim()}>Send request</button></div>
-      <small>This sends an in-app request to an existing account. Accepted contacts can assign tasks to each other.</small>
+    <div className="page-head"><div><span className="eyebrow">WORK TOGETHER</span><h1>Contacts</h1><p>Invite anyone by email, wherever they are.</p></div><Users size={28}/></div>
+    <form className="collab-invite" onSubmit={e => { e.preventDefault(); run(async () => { setMessage(''); const result = await c.act('inviteAny', email); setEmail(''); setMessage(result.delivery === 'email' ? 'Invitation email sent. They can join Daymark securely from the link.' : 'Contact request sent. They can accept it in Daymark.'); }); }}>
+      <label htmlFor="contact-email">Invite someone by email</label>
+      <div className="collab-actions"><input id="contact-email" type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="coworker@example.com"/><button className="primary" disabled={busy || !c.available || !email.trim()}>Send invitation</button></div>
+      <small>Existing users receive an in-app request. New users receive a secure email link to join Daymark. No service-role key is used.</small>
     </form>
     {error && <p className="inline-error" role="alert">{error}</p>}{message && <p className="inline-success" role="status">{message}</p>}
+    {c.emailInvites.some(invite => invite.status === 'pending') && <section className="task-section"><div className="section-row"><h2>Email invitations</h2><span>{c.emailInvites.filter(invite => invite.status === 'pending').length}</span></div><div className="collab-list">
+      {c.emailInvites.filter(invite => invite.status === 'pending').map(invite => <div className="collab-card" key={invite.id}><div className="collab-person"><strong>{invite.invitee_email}</strong><small>{invite.task_id ? 'Task invitation emailed' : 'Invitation emailed'} · expires {new Date(invite.expires_at).toLocaleDateString()}</small></div><Status status="invited"/><button className="text-btn danger-text" disabled={busy || !c.available} onClick={() => run(() => c.act('cancelEmailInvite', invite.id))}>Cancel</button></div>)}
+    </div></section>}
     {groups.map(([title, rows]) => <section className="task-section" key={title}><div className="section-row"><h2>{title}</h2><span>{rows.length}</span></div>
       <div className="collab-list">{rows.length ? rows.map(row => { const other = row.requester_id === c.uid ? row.addressee_id : row.requester_id; const profile = c.profiles[other];
-        return <div className="collab-card" key={row.id}><div className="collab-person"><strong>{personName(profile)}</strong><small>{profile?.email}</small></div><Status status={row.status}/>
+        return <div className="collab-card" key={row.id}><ProfileAvatar profile={profile} small/><div className="collab-person"><strong>{personName(profile)}</strong><small>{profile?.email}</small></div><Status status={row.status}/>
           {row.status === 'pending' && row.addressee_id === c.uid && <div className="collab-actions"><button className="primary" disabled={busy || !c.available} onClick={() => run(() => c.act('respondContact', row.id, 'accepted'))}>Accept</button><button className="secondary" disabled={busy || !c.available} onClick={() => run(() => c.act('respondContact', row.id, 'declined'))}>Decline</button></div>}
         </div>;
       }) : <p className="empty-line">{c.loading ? 'Loading…' : 'No contacts in this section yet.'}</p>}</div>
@@ -50,13 +54,13 @@ export function ContactsView({ c }) {
   </>;
 }
 
-export function AssignmentPicker({ c, taskId, value, onChange, disabled }) {
+export function AssignmentPicker({ c, taskId, value, onChange, inviteEmail, onInviteEmail, disabled }) {
   const used = new Set(c.assignments.filter(a => String(a.task_id) === String(taskId)).map(a => a.assignee_id));
   const choices = c.contacts.filter(id => !used.has(id));
-  return <label>Assign to (optional)<select value={value} onChange={e => onChange(e.target.value)} disabled={disabled || !c.available}>
+  return <fieldset className="assignment-picker"><legend>Share this task (optional)</legend><label>Assign to a contact<select value={value} onChange={e => { onChange(e.target.value); if (e.target.value) onInviteEmail(''); }} disabled={disabled || !c.available || Boolean(inviteEmail)}>
     <option value="">{taskId ? 'No new assignment' : 'Just me'}</option>
     {choices.map(id => <option key={id} value={id}>{personName(c.profiles[id])}{c.profiles[id]?.email ? ` · ${c.profiles[id].email}` : ''}</option>)}
-  </select><small className="field-help">{!c.online ? 'Reconnect to assign a task.' : !choices.length ? 'Add and accept a contact first. Each contact can receive this task once.' : 'The task owner keeps control of edits. The assignee can accept, decline, complete and comment.'}</small></label>;
+  </select></label><div className="assign-divider"><span>or</span></div><label>Invite by email<input type="email" value={inviteEmail} onChange={e => { onInviteEmail(e.target.value); if (e.target.value) onChange(''); }} disabled={disabled || !c.available || Boolean(value)} placeholder="person@example.com"/></label><small className="field-help">{!c.online ? 'Reconnect to share a task.' : 'Accepted contacts receive it in-app. Anyone else can receive a secure join link by email, then accept or decline the task.'}</small></fieldset>;
 }
 
 export function AssignmentResponses({ c, assignment }) {
@@ -80,8 +84,9 @@ export function AssignedView({ c, onOpen }) {
 
 export function TaskCollaboration({ c, taskId }) {
   const rows = c.assignments.filter(a => String(a.task_id) === String(taskId));
-  if (!rows.length) return null;
-  return <section className="task-collaboration"><h3>Assignments</h3>{rows.map(a => <div className="collab-card" key={a.id}><div className="collab-person"><strong>{personName(c.profiles[a.assignee_id])}</strong><small>You own this task</small></div><Status status={a.status}/></div>)}<p className="field-help">Assignment completion is separate from your task checkbox. Recurring tasks create a private next occurrence.</p><Comments c={c} taskId={taskId} assignments={rows}/></section>;
+  const invitations = c.emailInvites.filter(invite => String(invite.task_id) === String(taskId) && invite.status === 'pending');
+  if (!rows.length && !invitations.length) return null;
+  return <section className="task-collaboration"><h3>Assignments</h3>{invitations.map(invite => <div className="collab-card" key={invite.id}><div className="collab-person"><strong>{invite.invitee_email}</strong><small>Waiting for them to join Daymark</small></div><Status status="invited"/></div>)}{rows.map(a => <div className="collab-card" key={a.id}><ProfileAvatar profile={c.profiles[a.assignee_id]} small/><div className="collab-person"><strong>{personName(c.profiles[a.assignee_id])}</strong><small>You own this task</small></div><Status status={a.status}/></div>)}<p className="field-help">Assignment completion is separate from your task checkbox. Recurring tasks create a private next occurrence.</p>{rows.length > 0 && <Comments c={c} taskId={taskId} assignments={rows}/>}</section>;
 }
 
 function Comments({ c, taskId, assignments }) {

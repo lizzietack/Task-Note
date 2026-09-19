@@ -1,8 +1,19 @@
-# Daymark — Tasks & Notes v1.5.1
+# Daymark — Tasks & Notes v1.6
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
 ## What's new
+
+### v1.6 open invitations and personal profiles
+
+- Invite any email address. Existing Daymark users receive an in-app contact request; a new user receives a secure Supabase magic link and is automatically connected after joining with the invited email.
+- Invite an unregistered person directly from the task editor. The invitation stays attached to that task; after joining, the recipient can accept, decline, comment and complete it through the existing permission-aware workflow.
+- Email invitation tokens are random, stored only as hashes, expire after 24 hours and can be claimed only by the matching authenticated email.
+- Optional profile photos appear in the sidebar, settings and collaboration views. Images are limited to 5 MB and only the owner can upload, replace or remove them.
+- The mobile navigation closes when the user taps outside it. Today now uses a calendar-check icon, and Capture first uses a notebook-and-pen icon.
+- Realtime refresh, reconnect recovery and the 30-second visible-tab reconciliation remain active for cross-device and cross-location collaboration.
+
+Before deploying v1.6, run `DAYMARK_V1.6_EMAIL_INVITES_AND_AVATARS.sql` once in Supabase SQL Editor and complete `SUPABASE_V1.6_SETUP.md`. Custom SMTP is required for production delivery to arbitrary email addresses.
 
 ### v1.5.1 mobile and account polish
 
@@ -28,7 +39,7 @@ Assignment completion and the owner's task checkbox remain separate, matching th
 
 **Do not rerun the v1.4 setup SQL to upgrade your installation.** The original SQL files are retained for reference. This version uses your already-installed collaboration tables, policies and functions without replacing them.
 
-Required: profiles (including email), text task IDs, connections, task_assignments, task_comments, notifications, and the existing v1.4 tables/storage bucket. The client calls these exact functions:
+Required: profiles (including email and avatar_url), text task IDs, connections, task_assignments, task_comments, notifications, daymark_email_invites, and the existing v1.4 tables/storage bucket. The client calls these exact functions:
 
 | Function | Arguments |
 | --- | --- |
@@ -37,8 +48,11 @@ Required: profiles (including email), text task IDs, connections, task_assignmen
 | daymark_assign_task | target_task (text), target_user |
 | daymark_respond_assignment | target_assignment, response |
 | daymark_complete_assignment | target_assignment |
+| daymark_create_email_invite | invitee_email, target_task |
+| daymark_cancel_email_invite | target_invite |
+| daymark_claim_email_invite | invite_token |
 
-Contact/assignment notifications come from those functions. Comments use the existing RLS-protected insert policy; no new comment-notification trigger is added. The schema permits one connection per pair and one assignment per task/contact, including past declined records, so the UI does not offer to resend those records. Each signed-in user updates only their own profile email because the v1.4 Auth trigger did not populate it.
+Contact/assignment notifications come from those functions. Comments use the existing RLS-protected insert policy; no new comment-notification trigger is added. Email links are sent by Supabase Auth with `signInWithOtp`; the frontend contains only the publishable key. Each signed-in user updates only their own profile email because the v1.4 Auth trigger did not populate it.
 
 Retain the supplied public `.env` connection, or configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env.example`. No service-role key is used; secret/service-role keys are rejected by the frontend. Realtime requires the collaboration tables in your existing `supabase_realtime` publication. See [Supabase documentation](https://supabase.com/docs/guides/realtime/postgres-changes).
 
