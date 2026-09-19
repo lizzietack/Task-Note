@@ -2,10 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, Bell, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight,
   Circle, Clock3, File, FileText, Image as ImageIcon, Inbox, ListTodo, Menu, Mic, Moon, MoreHorizontal,
-  Paperclip, Pin, Play, Plus, Search, Sparkles, Square, Sun, Tag, Trash2, X, Zap, Cloud, LogOut, RefreshCw, WifiOff, Mail, LockKeyhole
+  Paperclip, Pin, Play, Plus, Search, Sparkles, Square, Sun, Tag, Trash2, X, Zap, Cloud, LogOut, RefreshCw, WifiOff, Mail, LockKeyhole, Users
 } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useDaymarkCloud } from './hooks/useDaymarkCloud';
+import { useDaymarkAuth } from './hooks/useDaymarkAuth';
+import { useCollaboration } from './hooks/useCollaboration';
+import { migrateAccountCache } from './lib/accountCache';
+import { ContactsView, AssignedView, AssignedDetail, NotificationBell, CollaborationHealth, AssignmentPicker, TaskCollaboration } from './components/Collaboration';
 
 const CATEGORIES = [
   { name: 'Personal', color: '#0F766E' },
@@ -90,8 +94,17 @@ function parseCapture(text) {
 }
 
 export default function App(){
-  const [tasks,setTasks] = useLocalStorage('daily-organizer.tasks.v2', initialTasks);
-  const [notes,setNotes] = useLocalStorage('daily-organizer.notes.v2', initialNotes);
+  const auth = useDaymarkAuth();
+  if (auth.authLoading) return <AppLoading/>;
+  if (!auth.configured) return <ConfigError/>;
+  if (!auth.session) return <AuthScreen signIn={auth.signIn} signUp={auth.signUp}/>;
+  return <Workspace key={auth.session.user.id} auth={auth}/>;
+}
+
+function Workspace({auth}){
+  useState(() => { migrateAccountCache(localStorage, auth.session.user.id, initialTasks, initialNotes); });
+  const [tasks,setTasks] = useLocalStorage(`daymark.${auth.session.user.id}.tasks.v1`, initialTasks);
+  const [notes,setNotes] = useLocalStorage(`daymark.${auth.session.user.id}.notes.v1`, initialNotes);
   const [dark,setDark] = useLocalStorage('daily-organizer.dark.v2', false);
   const [tab,setTab] = useState('today');
   const [sidebar,setSidebar] = useState(false);
@@ -104,7 +117,18 @@ export default function App(){
   const [taskView,setTaskView] = useState('all');
   const [month,setMonth] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [taskDefaults,setTaskDefaults] = useState({});
-  const cloud = useDaymarkCloud({ tasks, setTasks, notes, setNotes });
+  const cloud = { ...useDaymarkCloud({ tasks, setTasks, notes, setNotes, session: auth.session }), ...auth };
+  const collaboration = useCollaboration(auth.session);
+  const [assignedDetail, setAssignedDetail] = useState(null);
+  const [notice, setNotice] = useState('');
+  const navigateNotification = notification => {
+    if (notification.connection_id) { setTab('contacts'); return; }
+    const a = collaboration.assignments.find(a => a.id === notification.assignment_id);
+    if (a?.assignee_id === auth.session.user.id) { setTab('assigned'); setAssignedDetail(a.id); return; }
+    const task = tasks.find(t => String(t.id) === String(notification.task_id));
+    if (task) openTaskEditor(task);
+    else { setTab('assigned'); setNotice('This task is no longer available, or your access has changed.'); }
+  };
 
 
   useEffect(()=>{
@@ -145,9 +169,9 @@ export default function App(){
     const date=overrides.date!==undefined?overrides.date:parsed.date;
     const time=overrides.time!==undefined?overrides.time:parsed.time;
     if(kind==='note'){
-      setNotes(prev=>[{id:Date.now(),title:parsed.title,body:'',type:'text',pinned:false,archived:false,label:'Personal',color:'plain',checklist:[],attachments:[],source:{type:'manual'},createdAt:Date.now(),updatedAt:Date.now()},...prev]);
+      setNotes(prev=>[{id:crypto.randomUUID(),title:parsed.title,body:'',type:'text',pinned:false,archived:false,label:'Personal',color:'plain',checklist:[],attachments:[],source:{type:'manual'},createdAt:Date.now(),updatedAt:Date.now()},...prev]);
     } else {
-      setTasks(prev=>[{id:Date.now(),title:parsed.title,completed:false,date,time,priority:'medium',category:'Personal',list:taskListForDate(date),repeat:'none',reminder:time?'At time':'None',note:'',subtasks:[],source:{type:'manual'},createdAt:Date.now()},...prev]);
+      setTasks(prev=>[{id:crypto.randomUUID(),title:parsed.title,completed:false,date,time,priority:'medium',category:'Personal',list:taskListForDate(date),repeat:'none',reminder:time?'At time':'None',note:'',subtasks:[],source:{type:'manual'},createdAt:Date.now()},...prev]);
     }
     setQuickText(''); setComposer(false);
   };
@@ -161,21 +185,27 @@ export default function App(){
       const nextDate=nextRepeatDate(target.date,target.repeat);
       const alreadyExists=updated.some(t=>!t.completed && t.recurringFrom===target.id && t.date===nextDate);
       if(nextDate && !alreadyExists){
-        updated.unshift({...target,id:Date.now()+Math.random(),completed:false,completedAt:null,date:nextDate,list:taskListForDate(nextDate,target.list),subtasks:(target.subtasks||[]).map(s=>({...s,done:false})),recurringFrom:target.id,createdAt:Date.now(),updatedAt:Date.now()});
+        updated.unshift({...target,id:crypto.randomUUID(),completed:false,completedAt:null,date:nextDate,list:taskListForDate(nextDate,target.list),subtasks:(target.subtasks||[]).map(s=>({...s,done:false})),recurringFrom:target.id,createdAt:Date.now(),updatedAt:Date.now()});
       }
     }
     return updated;
   });
   const deleteTask=(id)=>{if(window.confirm('Delete this task? This cannot be undone.')){cloud.deleteEntity('task',id);setTasks(prev=>prev.filter(t=>String(t.id)!==String(id)));}};
-  const saveTask=(task)=>{
-    const normalized={...task,list:taskListForDate(task.date,task.list),updatedAt:Date.now()};
-    if(task.id) setTasks(prev=>prev.map(t=>t.id===task.id?normalized:t));
-    else setTasks(prev=>[{...normalized,id:Date.now(),createdAt:Date.now(),source:task.source||{type:'manual'}},...prev]);
+  const saveTask=async (task, assigneeId, onLocalSave)=>{
+    const normalized={...task,id:task.id || crypto.randomUUID(),createdAt:task.createdAt || Date.now(),list:taskListForDate(task.date,task.list),updatedAt:Date.now()};
+    setTasks(prev=>prev.some(t=>String(t.id)===String(normalized.id)) ? prev.map(t=>String(t.id)===String(normalized.id)?normalized:t) : [normalized,...prev]);
+    onLocalSave?.(normalized);
+    if (assigneeId) {
+      try {
+        await cloud.persistTask(normalized);
+        await collaboration.act('assign', normalized.id, assigneeId);
+      } catch (err) { throw new Error('Task saved. Assignment was not confirmed: ' + err.message + ' Check its status before retrying.'); }
+    }
     setEditingTask(null); setComposer(false); setTaskDefaults({});
   };
   const saveNote=(note)=>{
     if(note.id) setNotes(prev=>prev.map(n=>n.id===note.id?{...note,updatedAt:Date.now()}:n));
-    else setNotes(prev=>[{...note,id:Date.now(),createdAt:Date.now(),updatedAt:Date.now()},...prev]);
+    else setNotes(prev=>[{...note,id:crypto.randomUUID(),createdAt:Date.now(),updatedAt:Date.now()},...prev]);
     setEditingNote(null); setComposer(false);
   };
   const deleteNote=(id)=>{cloud.deleteEntity('note',id);setNotes(prev=>prev.filter(n=>String(n.id)!==String(id)));};
@@ -184,8 +214,8 @@ export default function App(){
     : note));
   const convertNote=(note)=>{
     const generated = note.type==='checklist' && note.checklist.length
-      ? note.checklist.filter(i=>!i.done).map((i,idx)=>({id:Date.now()+idx,title:i.text,completed:false,date:'',time:'',priority:'medium',category:note.label||'Personal',list:'inbox',repeat:'none',reminder:'None',note:`Created from note: ${note.title}`,subtasks:[],createdAt:Date.now()}))
-      : [{id:Date.now(),title:note.title||note.body.slice(0,80),completed:false,date:'',time:'',priority:'medium',category:note.label||'Personal',list:'inbox',repeat:'none',reminder:'None',note:note.body,subtasks:[],createdAt:Date.now()}];
+      ? note.checklist.filter(i=>!i.done).map((i,idx)=>({id:crypto.randomUUID(),title:i.text,completed:false,date:'',time:'',priority:'medium',category:note.label||'Personal',list:'inbox',repeat:'none',reminder:'None',note:`Created from note: ${note.title}`,subtasks:[],createdAt:Date.now()}))
+      : [{id:crypto.randomUUID(),title:note.title||note.body.slice(0,80),completed:false,date:'',time:'',priority:'medium',category:note.label||'Personal',list:'inbox',repeat:'none',reminder:'None',note:note.body,subtasks:[],createdAt:Date.now()}];
     setTasks(prev=>[...generated,...prev]); setTab('tasks'); setTaskView('inbox');
   };
 
@@ -206,6 +236,8 @@ export default function App(){
       <nav className="nav">
         <NavItem icon={Sparkles} label="Today" active={tab==='today'} count={counts.today} onClick={()=>{setTab('today');setSidebar(false)}}/>
         <NavItem icon={ListTodo} label="Tasks" active={tab==='tasks'} onClick={()=>{setTab('tasks');setSidebar(false)}}/>
+        <NavItem icon={Users} label="Assigned to me" active={tab==='assigned'} count={collaboration.assignments.filter(a=>a.assignee_id===auth.session.user.id && ['pending','accepted'].includes(a.status)).length} onClick={()=>{setTab('assigned');setSidebar(false)}}/>
+        <NavItem icon={Users} label="Contacts" active={tab==='contacts'} count={collaboration.connections.filter(c=>c.addressee_id===auth.session.user.id && c.status==='pending').length} onClick={()=>{setTab('contacts');setSidebar(false)}}/>
         <NavItem icon={FileText} label="Notes" active={tab==='notes'} onClick={()=>{setTab('notes');setSidebar(false)}}/>
         <NavItem icon={CalendarDays} label="Calendar" active={tab==='calendar'} onClick={()=>{setTab('calendar');setSidebar(false)}}/>
         <NavItem icon={Search} label="Search" active={tab==='search'} onClick={()=>{setTab('search');setSidebar(false)}}/>
@@ -225,11 +257,15 @@ export default function App(){
     <main className="main">
       <header className="topbar">
         <button className="icon menu" onClick={()=>setSidebar(true)}><Menu/></button>
-        <div className="top-spacer"/>
+        <div className="top-spacer"/><NotificationBell c={collaboration} onNavigate={navigateNotification}/>
         <button className="icon" aria-label="Toggle theme" onClick={()=>setDark(!dark)}>{dark?<Sun/>:<Moon/>}</button>
         <button className="add-top" onClick={()=>openAdd('quick')}><Plus size={19}/> <span>Add</span></button>
       </header>
       <div className="content">
+        <CollaborationHealth c={collaboration}/>
+        {notice && <div className="inline-error" role="status">{notice}<button className="text-btn" onClick={()=>setNotice('')}>Dismiss</button></div>}
+        {tab==='contacts' && <ContactsView c={collaboration}/>}
+        {tab==='assigned' && <AssignedView c={collaboration} onOpen={setAssignedDetail}/>}
         {tab==='today' && <TodayView tasks={tasks} notes={notes} completeTask={completeTask} setEditingTask={openTaskEditor} setEditingNote={openNoteEditor} toggleNoteChecklist={toggleNoteChecklist} openAdd={openAdd} setTab={setTab}/>} 
         {tab==='tasks' && <TasksView tasks={tasks} view={taskView} setView={setTaskView} completeTask={completeTask} setEditingTask={openTaskEditor} deleteTask={deleteTask} openAdd={openAdd}/>} 
         {tab==='notes' && <NotesView notes={notes} setNotes={setNotes} setEditingNote={openNoteEditor} toggleNoteChecklist={toggleNoteChecklist} convertNote={convertNote} openAdd={openAdd}/>} 
@@ -238,12 +274,13 @@ export default function App(){
       </div>
     </main>
 
+    {assignedDetail && <AssignedDetail c={collaboration} assignmentId={assignedDetail} onClose={()=>setAssignedDetail(null)}/>}
     <button className="fab" onClick={()=>openAdd('quick')} aria-label="Add"><Plus/></button>
 
     {(composer || editingTask || editingNote) && <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget){setComposer(false);setEditingTask(null);setEditingNote(null)}}}>
-      {editingTask ? <TaskEditor key={`task-${editingTask.id}`} task={editingTask} onSave={saveTask} onClose={()=>{setEditingTask(null);setComposer(false)}}/> :
+      {editingTask ? <TaskEditor collaboration={collaboration} key={`task-${editingTask.id}`} task={editingTask} onSave={saveTask} onClose={()=>{setEditingTask(null);setComposer(false)}}/> :
        editingNote ? <NoteEditor key={`note-${editingNote.id}`} note={editingNote} onSave={saveNote} onDelete={deleteNote} onClose={()=>{setEditingNote(null);setComposer(false)}}/> :
-       composerMode==='task' ? <TaskEditor key={`new-task-${taskDefaults.date||'blank'}`} task={null} defaults={taskDefaults} onSave={saveTask} onClose={()=>{setComposer(false);setTaskDefaults({})}}/> :
+       composerMode==='task' ? <TaskEditor collaboration={collaboration} key={`new-task-${taskDefaults.date||'blank'}`} task={null} defaults={taskDefaults} onSave={saveTask} onClose={()=>{setComposer(false);setTaskDefaults({})}}/> :
        composerMode==='note' ? <NoteEditor key="new-note" note={null} onSave={saveNote} onDelete={deleteNote} onClose={()=>setComposer(false)}/> :
        <QuickComposer quickText={quickText} setQuickText={setQuickText} addQuick={addQuick} onClose={()=>setComposer(false)} openTask={(defaults={})=>{setTaskDefaults(defaults);setComposerMode('task')}} openNote={()=>setComposerMode('note')}/>} 
     </div>}
@@ -344,18 +381,22 @@ function QuickComposer({quickText,setQuickText,addQuick,onClose,openTask,openNot
     <div className="modal-foot"><div className="mode-links"><button onClick={()=>openTask({title:parsed.title,date,time,list:taskListForDate(date)})}><ListTodo size={16}/> Detailed task</button><button onClick={openNote}><FileText size={16}/> Detailed note</button></div><button className="primary" onClick={save} disabled={!quickText.trim()}>Save {effectiveKind}</button></div></div>
 }
 
-function TaskEditor({task,defaults={},onSave,onClose}){
+function TaskEditor({task,defaults={},onSave,onClose,collaboration}){
   const isEditing=Boolean(task?.id);
   const [v,setV]=useState(()=>({...{title:'',completed:false,date:'',time:'',priority:'medium',category:'Personal',list:'inbox',repeat:'none',reminder:'None',note:'',subtasks:[],source:{type:'manual'}},...defaults,...(task||{})}));
   const [reminderStatus,setReminderStatus]=useState('');
+  const [assigneeId,setAssigneeId]=useState('');
+  const [saving,setSaving]=useState(false), [saveError,setSaveError]=useState('');
+  const savingRef=useRef(false);
+  const save=async()=>{if(savingRef.current)return;savingRef.current=true;setSaving(true);setSaveError('');try{await onSave(v,assigneeId,setV)}catch(err){setSaveError(err.message)}finally{savingRef.current=false;setSaving(false)}};
   const set=(k,val)=>setV(x=>({...x,[k]:val}));
   const setReminder=async value=>{set('reminder',value);if(value==='None')return;if(!('Notification' in window)){setReminderStatus('Browser notifications are not supported on this device.');return;}if(Notification.permission==='default'){const permission=await Notification.requestPermission();setReminderStatus(permission==='granted'?'Browser reminders are enabled.':'Notifications were not allowed. You can change this in browser settings.');}else if(Notification.permission==='denied'){setReminderStatus('Notifications are blocked in browser settings.');}else{setReminderStatus('Browser reminders are enabled.');}};
-  return <div className="modal editor-modal"><div className="modal-head"><div><span className="eyebrow">{isEditing?'EDIT TASK':'NEW TASK'}</span><h2>{isEditing?'Keep it useful.':'What needs doing?'}</h2></div><button className="icon" onClick={onClose}><X/></button></div><div className="form"><label>Task<input autoFocus value={v.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Renew car insurance"/></label><div className="form-row"><label>Date<input type="date" value={v.date} onChange={e=>{const date=e.target.value;setV(x=>({...x,date,list:taskListForDate(date,x.list)}))}}/></label><label>Time<input type="time" value={v.time} onChange={e=>set('time',e.target.value)}/></label></div><div className="form-row"><label>List<select value={v.list} onChange={e=>{const list=e.target.value;setV(x=>({...x,list,date:list==='today'&&!x.date?isoToday():x.date}))}}><option value="inbox">Inbox</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="later">Later</option></select></label><label>Priority<select value={v.priority} onChange={e=>set('priority',e.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label></div><div className="form-row"><label>Category<select value={v.category} onChange={e=>set('category',e.target.value)}>{CATEGORIES.map(c=><option key={c.name}>{c.name}</option>)}</select></label><label>Repeat<select value={v.repeat} onChange={e=>set('repeat',e.target.value)}><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label></div><label>Reminder<select value={v.reminder} onChange={e=>setReminder(e.target.value)}><option>None</option><option>At time</option><option>10 minutes before</option><option>30 minutes before</option><option>1 hour before</option><option>1 day before</option><option>Keep reminding until completed</option></select><small className="field-help">{reminderStatus||'Browser reminders work while Daymark is running. Installed/native background reminders require platform scheduling.'}</small></label><label>Short note<textarea value={v.note} onChange={e=>set('note',e.target.value)} placeholder="Optional context…"/></label><SubtaskEditor items={v.subtasks} setItems={items=>set('subtasks',items)}/></div><div className="modal-foot"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!v.title.trim()} onClick={()=>onSave(v)}>Save task</button></div></div>
+  return <div className="modal editor-modal"><div className="modal-head"><div><span className="eyebrow">{isEditing?'EDIT TASK':'NEW TASK'}</span><h2>{isEditing?'Keep it useful.':'What needs doing?'}</h2></div><button className="icon" onClick={onClose}><X/></button></div><div className="form"><label>Task<input autoFocus value={v.title} onChange={e=>set('title',e.target.value)} placeholder="e.g. Renew car insurance"/></label><div className="form-row"><label>Date<input type="date" value={v.date} onChange={e=>{const date=e.target.value;setV(x=>({...x,date,list:taskListForDate(date,x.list)}))}}/></label><label>Time<input type="time" value={v.time} onChange={e=>set('time',e.target.value)}/></label></div><div className="form-row"><label>List<select value={v.list} onChange={e=>{const list=e.target.value;setV(x=>({...x,list,date:list==='today'&&!x.date?isoToday():x.date}))}}><option value="inbox">Inbox</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="later">Later</option></select></label><label>Priority<select value={v.priority} onChange={e=>set('priority',e.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label></div><div className="form-row"><label>Category<select value={v.category} onChange={e=>set('category',e.target.value)}>{CATEGORIES.map(c=><option key={c.name}>{c.name}</option>)}</select></label><label>Repeat<select value={v.repeat} onChange={e=>set('repeat',e.target.value)}><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label></div><label>Reminder<select value={v.reminder} onChange={e=>setReminder(e.target.value)}><option>None</option><option>At time</option><option>10 minutes before</option><option>30 minutes before</option><option>1 hour before</option><option>1 day before</option><option>Keep reminding until completed</option></select><small className="field-help">{reminderStatus||'Browser reminders work while Daymark is running. Installed/native background reminders require platform scheduling.'}</small></label><label>Short note<textarea value={v.note} onChange={e=>set('note',e.target.value)} placeholder="Optional context…"/></label><SubtaskEditor items={v.subtasks} setItems={items=>set('subtasks',items)}/><AssignmentPicker c={collaboration} taskId={v.id} value={assigneeId} onChange={setAssigneeId} disabled={saving}/>{v.id && <TaskCollaboration c={collaboration} taskId={v.id}/>}<p className="field-help">Assigned people can see the task title, schedule, note and subtasks.</p>{saveError&&<p className="inline-error" role="alert">{saveError}</p>}</div><div className="modal-foot"><button className="secondary" onClick={onClose}>Cancel</button><button className="primary" disabled={!v.title.trim() || saving || (assigneeId && !collaboration.available)} onClick={save}>{saving?'Saving…':'Save task'}</button></div></div>
 }
 
 function SubtaskEditor({items,setItems}){
   const [text,setText]=useState(''); const inputRef=useRef(null);
-  const add=()=>{const value=text.trim();if(!value){inputRef.current?.focus();return;}setItems([...items,{id:Date.now()+Math.random(),text:value,done:false}]);setText('');requestAnimationFrame(()=>inputRef.current?.focus());};
+  const add=()=>{const value=text.trim();if(!value){inputRef.current?.focus();return;}setItems([...items,{id:crypto.randomUUID(),text:value,done:false}]);setText('');requestAnimationFrame(()=>inputRef.current?.focus());};
   return <div className="subtasks"><span>Subtasks</span>{items.map(i=><div key={i.id}><button type="button" className="check mini" onClick={()=>setItems(items.map(x=>x.id===i.id?{...x,done:!x.done}:x))}>{i.done&&<Check size={12}/>}</button><input value={i.text} onChange={e=>setItems(items.map(x=>x.id===i.id?{...x,text:e.target.value}:x))}/><button type="button" className="icon tiny" aria-label="Remove subtask" onClick={()=>setItems(items.filter(x=>x.id!==i.id))}><X size={14}/></button></div>)}<div className="subtask-add-row"><input ref={inputRef} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();add()}}} placeholder="Add a subtask"/><button type="button" className="add-item-btn" onClick={add}><Plus size={15}/> Add</button></div></div>
 }
 
@@ -394,7 +435,7 @@ function NoteEditor({note,onSave,onDelete,onClose}){
   const addChecklistItem=()=>{
     const text=item.trim();
     if(!text){itemRef.current?.focus();return;}
-    setV(prev=>({...prev,checklist:[...(prev.checklist||[]),{id:Date.now()+Math.random(),text,done:false}]}));
+    setV(prev=>({...prev,checklist:[...(prev.checklist||[]),{id:crypto.randomUUID(),text,done:false}]}));
     setItem('');
     requestAnimationFrame(()=>itemRef.current?.focus());
   };

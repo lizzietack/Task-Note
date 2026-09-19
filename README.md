@@ -1,69 +1,53 @@
-# Daymark — Tasks & Notes v1.4
+# Daymark — Tasks & Notes v1.5 Collaboration
 
-Daymark is a calm, offline-friendly everyday task and notes organizer built with React, Vite and Supabase.
+Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
-## What v1.4 adds
+## What's new
 
-- Supabase email/password authentication with persistent sessions
-- Private per-user cloud data protected by Row Level Security
-- Cross-device task and note synchronization
-- Realtime refresh when another signed-in device changes tasks or notes
-- Private Supabase Storage uploads for note images, files and voice recordings
-- Local cache remains the immediate UI source, so ordinary task/note work remains responsive when connectivity drops
-- Delete tombstones so a stale offline device does not simply resurrect a task/note deleted on another device
-- Existing v1.3 local data is merged into the signed-in account on first connection
-- Visible sync state and manual sync control
-- Future import/source metadata is preserved without exposing unfinished email UI
+- Contacts: invite an existing Daymark user by exact email; accept or decline requests.
+- Assign to: select an accepted contact in the task editor. Failed assignments preserve the saved task for retry.
+- Assigned to me: pending, accepted, completed and past assignments; accept/decline/complete actions and lightweight comments.
+- Notification bell: unread count across all notifications, latest 100 entries, navigation, mark one/all read.
+- Realtime updates plus refresh on reconnect, returning to the tab and every 30 seconds while visible.
+- Owners retain task editing/deletion. Assignees use the secure workflow functions. Shared tasks never enter personal sync or local storage. Account caches and delete queues are isolated.
 
-## 1. Create the Supabase schema
+Assignment completion and the owner's task checkbox remain separate, matching the existing migration. Recurring tasks create a private next occurrence. Comments are task-wide; accepted/completed participants can post. Collaboration needs connectivity; personal task/note editing remains offline-friendly.
 
-Open your Supabase project and go to **SQL Editor -> New query**. Paste the complete contents of:
+## Existing Supabase project
 
-`DAYMARK_SUPABASE_SETUP.sql`
+**Do not rerun the v1.4 setup SQL to upgrade your installation.** The original SQL files are retained for reference. This version uses your already-installed collaboration tables, policies and functions without replacing them.
 
-Run it once. It creates the Daymark tables, RLS policies, private storage bucket, profile trigger and realtime publication entries.
+Required: profiles (including email), text task IDs, connections, task_assignments, task_comments, notifications, and the existing v1.4 tables/storage bucket. The client calls these exact functions:
 
-No service-role key is required by the app.
+| Function | Arguments |
+| --- | --- |
+| daymark_invite_contact | invitee_email |
+| daymark_respond_contact | target_connection, response |
+| daymark_assign_task | target_task (text), target_user |
+| daymark_respond_assignment | target_assignment, response |
+| daymark_complete_assignment | target_assignment |
 
-## 2. Configure authentication
+Contact/assignment notifications come from those functions. Comments use the existing RLS-protected insert policy; no new comment-notification trigger is added. The schema permits one connection per pair and one assignment per task/contact, including past declined records, so the UI does not offer to resend those records. Each signed-in user updates only their own profile email because the v1.4 Auth trigger did not populate it.
 
-In **Supabase -> Authentication -> Providers -> Email**, keep Email enabled.
+Retain the supplied public `.env` connection, or configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env.example`. No service-role key is used; secret/service-role keys are rejected by the frontend. Realtime requires the collaboration tables in your existing `supabase_realtime` publication. See [Supabase documentation](https://supabase.com/docs/guides/realtime/postgres-changes).
 
-For production, configure your Site URL and Redirect URLs under **Authentication -> URL Configuration** to your deployed HTTPS Daymark domain. Email confirmation can remain enabled; new users will then be asked to confirm their email before their first session.
+## Run and deploy
 
-## 3. Environment
+Use Node.js 22+ (validated with Node 24):
 
-This package includes the supplied public project connection in `.env`. For another environment use:
-
-```env
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_PUBLIC_KEY
-```
-
-Only the Supabase publishable key belongs in the frontend. Never put a service-role key or database password in Vite/browser environment variables.
-
-## 4. Run locally
-
-```bash
-npm install
+```sh
+npm ci
+npm test
+npm run build
 npm run dev
 ```
 
-Open the localhost URL Vite prints. Create/sign in to a Daymark account. Existing v1.3 local tasks/notes in the same browser are merged into the account.
+For Netlify, replace project files, retain your environment variables and deploy with build command `npm run build` and publish directory `dist`. The source ZIP excludes dependencies, Git history and old builds.
 
-## 5. Production build
+Run `npm run test:browser` for mocked Auth/REST/Realtime browser tests. These never change your live project. The suite defaults to installed Microsoft Edge; set `PLAYWRIGHT_CHANNEL=chrome` for Chrome, or `PLAYWRIGHT_CHANNEL=chromium` after `npx playwright install chromium`.
 
-```bash
-npm run build
-npm run preview
-```
+The first account used after upgrade claims the old v1.4 device cache once; other accounts do not import it. Existing IDs are preserved; new items use UUID text IDs.
 
-Deploy `dist/` through HTTPS (for example Vercel/Netlify). HTTPS is required for reliable PWA installation and microphone permissions outside localhost.
+## Validation boundary
 
-## Sync model
-
-Daymark writes task/note changes to the local cache immediately, then syncs them to Supabase when signed in and online. Offline edits remain locally available and retry when connectivity returns. Deletes are queued as tombstones. Attachments created locally keep their preview until uploaded; signed cloud attachment URLs require connectivity to refresh after they expire.
-
-## Current reminder boundary
-
-Browser reminders can fire while Daymark is running and notifications are permitted. Guaranteed reminders while the application is fully closed require native scheduled notifications (Capacitor Android/iOS) or a push backend. That is the next mobile layer, not something this web build pretends to provide.
+See `VALIDATION.md`. No live credentials were supplied: actual RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, invite/accept, assign, accept/comment/complete and check the owner's notification. Recheck attachments and reminders on deployed HTTPS. As in v1.4, browser reminders require Daymark to be running; closed-app delivery requires a push/native scheduling backend.

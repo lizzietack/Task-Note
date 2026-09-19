@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 const BUCKET = 'daymark-attachments';
 const DELETE_QUEUE_KEY = 'daymark.sync.delete-queue.v1';
@@ -10,7 +10,7 @@ const isoToMs = value => value ? new Date(value).getTime() : null;
 const stamp = item => item?.updatedAt || item?.createdAt || 0;
 const idText = value => String(value);
 
-function taskToRow(task, userId) {
+export function taskToRow(task, userId) {
   return {
     id: idText(task.id), user_id: userId, title: task.title || '', completed: Boolean(task.completed),
     date: task.date || null, time: task.time || null, priority: task.priority || 'medium',
@@ -57,36 +57,37 @@ function mergeById(local, remote) {
     const key = idText(item.id); const current = merged.get(key);
     if (!current || stamp(item) >= stamp(current)) merged.set(key, item);
   });
-  return [...merged.values()];
+  const result = [...merged.values()];
+  return JSON.stringify(result) === JSON.stringify(local) ? local : result;
 }
-function getDeleteQueue() { try { return JSON.parse(localStorage.getItem(DELETE_QUEUE_KEY) || '[]'); } catch { return []; } }
-function setDeleteQueue(q) { try { localStorage.setItem(DELETE_QUEUE_KEY, JSON.stringify(q)); } catch {} }
+function getDeleteQueue(userId) { try { return JSON.parse(localStorage.getItem(`${DELETE_QUEUE_KEY}.${userId}`) || '[]'); } catch { return []; } }
+function setDeleteQueue(q, userId) { try { localStorage.setItem(`${DELETE_QUEUE_KEY}.${userId}`, JSON.stringify(q)); } catch {} }
 function safeName(name='file') { return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120); }
 
-export function useDaymarkCloud({ tasks, setTasks, notes, setNotes }) {
-  const [session, setSession] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+export function useDaymarkCloud({ tasks, setTasks, notes, setNotes, session }) {
+
   const [syncState, setSyncState] = useState('local');
   const [syncError, setSyncError] = useState('');
   const [lastSynced, setLastSynced] = useState(null);
   const hydratedRef = useRef(false);
   const syncingRef = useRef(false);
   const timerRef = useRef(null);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured) { setAuthLoading(false); return; }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session || null); setAuthLoading(false); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => { setSession(next); setAuthLoading(false); hydratedRef.current = false; });
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  const signIn = useCallback((email, password) => supabase.auth.signInWithPassword({ email, password }), []);
-  const signUp = useCallback((email, password) => supabase.auth.signUp({ email, password }), []);
-  const signOut = useCallback(() => supabase.auth.signOut(), []);
+  const [retry, setRetry] = useState(0);
+  const remoteTasks = useRef(new Map());
+  const remoteNotes = useRef(new Map());
+  const mounted = useRef(true);
+  const latestSync = useRef(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const persistTask = useCallback(async task => {
+    if (!navigator.onLine) throw new Error('Reconnect before assigning.');
+    const { error } = await supabase.from('tasks').upsert(taskToRow(task, session.user.id));
+    if (error) throw error;
+    remoteTasks.current.set(idText(task.id), JSON.stringify(taskToRow(task, session.user.id)));
+  }, [session.user.id]);
 
   const flushDeleteQueue = useCallback(async () => {
     if (!session?.user?.id || !navigator.onLine) return;
-    const queue = getDeleteQueue(); if (!queue.length) return;
+    const queue = getDeleteQueue(session.user.id); if (!queue.length) return;
     const pending = [];
     for (const item of queue) {
       try {
@@ -102,12 +103,12 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes }) {
         if (error) throw error;
       } catch { pending.push(item); }
     }
-    setDeleteQueue(pending);
-  }, [session]);
+    setDeleteQueue(pending, session.user.id);
+  }, [session.user.id]);
 
   const deleteEntity = useCallback(async (type, id) => {
     const entry = { type, id: idText(id), at: Date.now() };
-    const q = getDeleteQueue(); if (!q.some(x => x.type === type && x.id === entry.id)) setDeleteQueue([...q, entry]);
+    const q = getDeleteQueue(session.user.id); if (!q.some(x => x.type === type && x.id === entry.id)) setDeleteQueue([...q, entry], session.user.id);
     await flushDeleteQueue();
   }, [flushDeleteQueue]);
 
@@ -121,6 +122,7 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes }) {
       supabase.from('deleted_items').select('*').eq('user_id', uid),
     ]);
     if (te || ne || ae || de) throw te || ne || ae || de;
+    taskRows.forEach(row => remoteTasks.current.set(row.id, JSON.stringify(taskToRow(rowToTask(row), uid))));
     const tombs = new Set((tombRows || []).map(x => `${x.entity_type}:${x.entity_id}`));
     const cloudTasks = (taskRows || []).map(rowToTask).filter(x => !tombs.has(`task:${idText(x.id)}`));
     const cloudNotes = (noteRows || []).map(rowToNote).filter(x => !tombs.has(`note:${idText(x.id)}`));
@@ -137,8 +139,9 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes }) {
       attachmentMap.get(a.note_id).push(entry);
     });
     const cloudWithAttachments = cloudNotes.map(n => ({ ...n, attachments: (attachmentMap.get(idText(n.id)) || []).filter(a => (n.attachmentIds || []).includes(idText(a.id))) }));
+    cloudWithAttachments.forEach(note => remoteNotes.current.set(idText(note.id), JSON.stringify(noteToRow(note, uid))));
     return { cloudTasks, cloudNotes: cloudWithAttachments, tombs };
-  }, [session]);
+  }, [session.user.id]);
 
   const uploadAttachment = useCallback(async (note, a) => {
     if (!session?.user?.id) return a;
@@ -151,19 +154,20 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes }) {
     const { error: metaError } = await supabase.from('attachments').upsert(attachmentToRow(a, note.id, session.user.id, path));
     if (metaError) throw metaError;
     return { ...a, storagePath: path };
-  }, [session]);
+  }, [session.user.id]);
 
   const syncNow = useCallback(async () => {
-    if (!session?.user?.id || !hydratedRef.current || syncingRef.current || !navigator.onLine) return;
+    if (!mounted.current || !session?.user?.id || syncingRef.current || !navigator.onLine) return;
+    if (!hydratedRef.current) { setRetry(n => n + 1); return; }
     syncingRef.current = true; setSyncState('syncing'); setSyncError('');
     try {
       await flushDeleteQueue();
       const uid = session.user.id;
-      const taskRows = tasks.map(t => taskToRow(t, uid));
-      const initialNoteRows = notes.map(n => noteToRow(n, uid));
-      if (taskRows.length) { const { error } = await supabase.from('tasks').upsert(taskRows); if (error) throw error; }
+      const taskRows = tasks.map(t => taskToRow(t, uid)).filter(row => remoteTasks.current.get(row.id) !== JSON.stringify(row));
+      const initialNoteRows = notes.map(n => noteToRow(n, uid)).filter(row => remoteNotes.current.get(row.id) !== JSON.stringify(row));
+      if (taskRows.length) { const { error } = await supabase.from('tasks').upsert(taskRows); if (error) throw error; taskRows.forEach(row => remoteTasks.current.set(row.id, JSON.stringify(row))); }
       // Insert/update note rows before attachment metadata so the composite foreign key exists for new notes.
-      if (initialNoteRows.length) { const { error } = await supabase.from('notes').upsert(initialNoteRows); if (error) throw error; }
+      if (initialNoteRows.length) { const { error } = await supabase.from('notes').upsert(initialNoteRows); if (error) throw error; initialNoteRows.forEach(row => remoteNotes.current.set(row.id, JSON.stringify(row))); }
       const noteCopies = [];
       for (const note of notes) {
         const attachments = [];
@@ -171,12 +175,15 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes }) {
         noteCopies.push({ ...note, attachments });
       }
       const changedAttachments = noteCopies.some((n, i) => JSON.stringify(n.attachments) !== JSON.stringify(notes[i]?.attachments));
-      if (changedAttachments) setNotes(noteCopies);
+      if (changedAttachments && mounted.current) setNotes(prev => prev.map(n => { const uploaded = noteCopies.find(copy => String(copy.id) === String(n.id)); return uploaded && stamp(uploaded) === stamp(n) ? uploaded : n; }));
       setSyncState('synced'); setLastSynced(Date.now());
     } catch (error) {
       console.error('Daymark cloud sync failed', error); setSyncState('error'); setSyncError(error.message || 'Cloud sync failed. Your changes remain saved on this device.');
-    } finally { syncingRef.current = false; }
-  }, [session, tasks, notes, setNotes, flushDeleteQueue, uploadAttachment]);
+    } finally {
+      syncingRef.current = false;
+      if (mounted.current && latestSync.current !== syncNow) { clearTimeout(timerRef.current); timerRef.current = setTimeout(() => latestSync.current?.(), 900); }
+    }
+  }, [session.user.id, tasks, notes, setNotes, flushDeleteQueue, uploadAttachment]);
 
   useEffect(() => {
     if (!session?.user?.id) { hydratedRef.current = false; setSyncState('local'); return; }
@@ -195,11 +202,11 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes }) {
         localStorage.setItem(`${IMPORT_KEY_PREFIX}${session.user.id}`, '1');
         setSyncState('synced'); setLastSynced(Date.now());
       } catch (error) {
-        console.error('Daymark cloud bootstrap failed', error); hydratedRef.current = true; setSyncState('error'); setSyncError(error.message || 'Could not connect to Daymark Cloud. Local data is still available.');
+        console.error('Daymark cloud bootstrap failed', error); if (cancelled) return; hydratedRef.current = false; setSyncState('error'); setSyncError(error.message || 'Could not connect to Daymark Cloud. Local data is still available.');
       }
     })();
     return () => { cancelled = true; };
-  }, [session?.user?.id]); // intentionally bootstrap once per signed-in user
+  }, [session?.user?.id, retry]); // bootstrap once per account, with explicit retry
 
   useEffect(() => {
     if (!session?.user?.id || !hydratedRef.current) return;
@@ -208,15 +215,26 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes }) {
     return () => clearTimeout(timerRef.current);
   }, [tasks, notes, session?.user?.id, syncNow]);
 
+  latestSync.current = syncNow;
   useEffect(() => {
-    if (!session?.user?.id) return;
-    const onOnline = () => syncNow(); window.addEventListener('online', onOnline);
-    const channel = supabase.channel(`daymark-${session.user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${session.user.id}` }, () => setTimeout(async () => { try { const r = await fetchCloud(); setTasks(prev => mergeById(prev.filter(t=>!r.tombs.has(`task:${idText(t.id)}`)), r.cloudTasks)); } catch {} }, 250))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes', filter: `user_id=eq.${session.user.id}` }, () => setTimeout(async () => { try { const r = await fetchCloud(); setNotes(prev => mergeById(prev.filter(n=>!r.tombs.has(`note:${idText(n.id)}`)), r.cloudNotes)); } catch {} }, 250))
-      .subscribe();
-    return () => { window.removeEventListener('online', onOnline); supabase.removeChannel(channel); };
-  }, [session?.user?.id, fetchCloud, setTasks, setNotes, syncNow]);
+    const uid = session.user.id;
+    let disposed = false, timer;
+    const refresh = async () => {
+      try {
+        const r = await fetchCloud(); if (disposed) return;
+        setTasks(prev => mergeById(prev.filter(t=>!r.tombs.has(`task:${idText(t.id)}`)), r.cloudTasks));
+        setNotes(prev => mergeById(prev.filter(n=>!r.tombs.has(`note:${idText(n.id)}`)), r.cloudNotes));
+        hydratedRef.current = true;
+      } catch (error) { if (!disposed) { setSyncState('error'); setSyncError(error.message); } }
+    };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(refresh, 250); };
+    const onOnline = async () => { await refresh(); if (!disposed) latestSync.current?.(); };
+    window.addEventListener('online', onOnline);
+    const channel = supabase.channel(`daymark-${uid}`);
+    ['tasks','notes','deleted_items'].forEach(table => channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `user_id=eq.${uid}` }, schedule));
+    channel.subscribe();
+    return () => { disposed = true; clearTimeout(timer); window.removeEventListener('online', onOnline); supabase.removeChannel(channel); };
+  }, [session.user.id, fetchCloud, setTasks, setNotes]);
 
-  return { configured: isSupabaseConfigured, session, authLoading, signIn, signUp, signOut, syncState, syncError, lastSynced, syncNow, deleteEntity };
+  return { syncState, syncError, lastSynced, syncNow, deleteEntity, persistTask };
 }
