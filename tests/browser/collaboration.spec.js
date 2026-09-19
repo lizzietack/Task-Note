@@ -11,6 +11,9 @@ test('contacts accept requests and invite both existing and new users by email',
   await expect(page.getByText('Invitation email sent.',{exact:false})).toBeVisible();
   expect(db.daymark_email_invites.find(invite=>invite.invitee_email==='missing@example.com')).toBeTruthy();
   expect(calls.some(call=>call.path.endsWith('/auth/v1/otp')&&call.body?.email==='missing@example.com')).toBe(true);
+  await page.getByRole('button',{name:'Resend',exact:true}).click();
+  await expect(page.getByText('A fresh invitation was sent',{exact:false})).toBeVisible();
+  expect(calls.filter(call=>call.path.endsWith('/auth/v1/otp')&&call.body?.email==='missing@example.com')).toHaveLength(2);
   db.profiles.push({ id:'44444444-4444-4444-8444-444444444444', display_name:'New colleague',email:'new@example.com' });
   await page.getByLabel('Invite someone by email').fill('new@example.com');
   await page.getByRole('button',{name:'Send invitation'}).click();
@@ -123,12 +126,31 @@ test('assignee can accept, comment, complete; no owner edits or personal-cache w
   await page.getByLabel('Add a comment').fill('Receipt attached to our email.');
   await page.getByRole('button',{name:'Post comment'}).click();
   await expect(page.getByText('Receipt attached to our email.',{exact:true})).toBeVisible();
+  await expect(page.getByText('added a comment.',{exact:false})).toBeVisible();
   await page.getByRole('dialog').getByRole('button',{name:'Complete assignment'}).click();
   await expect(page.getByRole('dialog').getByText('completed',{exact:true})).toBeVisible();
+  await expect(page.getByText('completed the assignment.',{exact:false})).toBeVisible();
   expect(state.db.tasks.find(t=>t.id==='shared-task').completed).toBe(false);
   expect(state.calls.filter(c=>c.method==='POST' && c.path.endsWith('/tasks')).flatMap(c=>c.body).some(t=>t.id==='shared-task')).toBe(false);
   const cached = await page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.${uid}.tasks.v1`)),ME);
   expect(cached.some(t=>t.id==='shared-task')).toBe(false);
+  expect(state.errors).toEqual([]);
+});
+
+test('offline comments queue once and synchronize idempotently after reconnecting', async ({ page }) => {
+  const state=await setup(page);
+  await page.getByRole('button',{name:'Assigned to me',exact:false}).click();
+  await page.getByRole('button',{name:'Send payment receipt',exact:true}).click();
+  await page.getByRole('dialog').getByRole('button',{name:'Accept task'}).click();
+  await expect(page.getByLabel('Add a comment')).toBeVisible();
+  await page.evaluate(()=>{Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false});window.dispatchEvent(new Event('offline'));});
+  await page.getByLabel('Add a comment').fill('Queued update from the train.');
+  await page.getByRole('button',{name:'Queue comment'}).click();
+  await expect(page.getByText('Waiting to sync',{exact:true})).toBeVisible();
+  expect(await page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.collaboration-outbox.v1.${uid}`)||'[]').length,ME)).toBe(1);
+  await page.evaluate(()=>{Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true});window.dispatchEvent(new Event('online'));});
+  await expect.poll(()=>state.db.task_comments.filter(comment=>comment.body==='Queued update from the train.').length).toBe(1);
+  await expect.poll(()=>page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.collaboration-outbox.v1.${uid}`)||'[]').length,ME)).toBe(0);
   expect(state.errors).toEqual([]);
 });
 
@@ -196,13 +218,19 @@ test('mobile layout and offline collaboration preserve personal editing', async 
   await page.screenshot({path:'test-results/mobile-assigned.png',fullPage:true,animations:'disabled'});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.evaluate(()=>{Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false});window.dispatchEvent(new Event('offline'));});
-  await expect(page.getByRole('button',{name:'Accept task'})).toBeDisabled();
-  await expect(page.getByText('Offline — collaboration will refresh',{exact:false})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Accept task'})).toBeEnabled();
+  await page.getByRole('button',{name:'Accept task'}).click();
+  await expect(page.getByText('Accepted response queued for sync.',{exact:false})).toBeVisible();
+  expect(await page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.collaboration-outbox.v1.${uid}`)||'[]').length,ME)).toBe(1);
+  await expect(page.getByText('collaboration change is safely queued',{exact:false})).toBeVisible();
   await page.locator('button.fab').click();
   await page.getByRole('button',{name:'Note',exact:true}).click();
   await page.getByPlaceholder(/^Try: Call Nana/).fill('Remember an offline note');
   await page.getByRole('button',{name:'Save note',exact:true}).click();
   expect(await page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.${uid}.notes.v1`)).some(n=>n.title==='an offline note'),ME)).toBe(true);
+  await page.evaluate(()=>{Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true});window.dispatchEvent(new Event('online'));});
+  await expect.poll(()=>state.db.task_assignments[0].status).toBe('accepted');
+  await expect.poll(()=>page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.collaboration-outbox.v1.${uid}`)||'[]').length,ME)).toBe(0);
   expect(state.errors).toEqual([]);
 });
 
@@ -283,6 +311,14 @@ test('profile settings show the name, update identity and provide account securi
   await page.locator('.settings-modal input[type="file"]').setInputFiles({name:'profile.png',mimeType:'image/png',buffer:Buffer.from('profile-image')});
   await expect(page.locator('.settings-modal .inline-success')).toContainText('profile photo has been updated');
   await expect(page.locator('.settings-modal .profile-avatar img')).toBeVisible();
+  await page.getByLabel('Timezone').fill('Europe/London');
+  await page.getByRole('button',{name:'Save timezone'}).click();
+  await expect(page.locator('.settings-modal .inline-success')).toContainText('timezone has been updated');
+  await page.getByLabel('Email copies (useful when Daymark is closed)').check();
+  await page.getByRole('button',{name:'Save notification preferences'}).click();
+  await expect(page.locator('.settings-modal .inline-success')).toContainText('notification preferences have been saved');
+  expect(state.db.profiles.find(profile=>profile.id===ME).timezone).toBe('Europe/London');
+  expect(state.db.notification_preferences.find(preference=>preference.user_id===ME).email_notifications).toBe(true);
   expect(state.db.profiles.find(profile=>profile.id===ME).avatar_url).toContain('/daymark-avatars/');
   expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.email==='raphael.new@example.com')).toBe(true);
   expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.password==='new-password-123')).toBe(true);

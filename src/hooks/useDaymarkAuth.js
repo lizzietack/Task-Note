@@ -42,6 +42,16 @@ export function useDaymarkAuth() {
     const { error } = await supabase.auth.updateUser({ password, data: { daymark_password_created: true } });
     if (error) throw error;
   }, []);
+  const updateTimezone = useCallback(async timezone => {
+    const value = timezone.trim();
+    if (!session?.user?.id) throw new Error('Your session has expired. Sign in and try again.');
+    if (!value || value.length > 80) throw new Error('Choose a valid timezone.');
+    try { new Intl.DateTimeFormat(undefined, { timeZone: value }).format(); }
+    catch { throw new Error('Use a valid timezone such as Africa/Accra or Europe/London.'); }
+    const { error } = await supabase.from('profiles').update({ timezone: value, updated_at: new Date().toISOString() }).eq('id', session.user.id);
+    if (error) throw error;
+    return value;
+  }, [session?.user?.id]);
   const requestPasswordReset = useCallback(async email => {
     const normalized = email.trim().toLowerCase();
     if (!normalized) throw new Error('Enter your email address first.');
@@ -75,5 +85,5 @@ export function useDaymarkAuth() {
     const { error: authError } = await supabase.auth.updateUser({ data: { avatar_url: null } });
     if (authError) throw authError;
   }, [session?.user?.id]);
-  return { session, authLoading, configured: isSupabaseConfigured, signIn, signUp, signOut, updateDisplayName, updateEmail, updatePassword, requestPasswordReset, updateAvatar, removeAvatar };
+  return { session, authLoading, configured: isSupabaseConfigured, signIn, signUp, signOut, updateDisplayName, updateEmail, updatePassword, updateTimezone, requestPasswordReset, updateAvatar, removeAvatar };
 }

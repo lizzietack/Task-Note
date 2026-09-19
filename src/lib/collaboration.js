@@ -61,6 +61,7 @@ export function collaborationApi(client, userId) {
       }
     },
     inviteTaskByEmail: (email, taskId, taskTitle) => emailInvitation(email, taskId, taskTitle),
+    resendEmailInvite: invite => emailInvitation(invite.invitee_email, invite.task_id, invite.task_title || ''),
     cancelEmailInvite: id => rpc('daymark_cancel_email_invite', { target_invite: id }),
     claimEmailInvite: token => rpc('daymark_claim_email_invite', { invite_token: token }),
     respondContact: (id, response) => {
@@ -70,16 +71,16 @@ export function collaborationApi(client, userId) {
     assign: (taskId, user) => rpc('daymark_assign_task', { target_task: String(taskId), target_user: user }),
     respondAssignment: (assignment, response) => {
       if (!assignmentActions(assignment, userId).includes(response)) throw new Error('This action is no longer available. Refresh and try again.');
-      return response === 'completed'
-        ? rpc('daymark_complete_assignment', { target_assignment: assignment.id })
-        : rpc('daymark_respond_assignment', { target_assignment: assignment.id, response });
+      return rpc('daymark_set_assignment_status', { target_assignment: assignment.id, target_status: response });
     },
     comments: taskId => allRows(() => client.from('task_comments').select('*').eq('task_id', String(taskId)).order('created_at').order('id')),
-    addComment: (taskId, body) => {
+    activity: taskId => checked(client.from('task_activity').select('*').eq('task_id', String(taskId)).order('created_at', { ascending: false }).limit(100)),
+    addComment: (taskId, body, clientNonce = crypto.randomUUID()) => {
       const text = body.trim();
       if (!text || [...text].length > 2000) throw new Error('Comments must contain 1–2,000 characters.');
-      return checked(client.from('task_comments').insert({ task_id: String(taskId), author_id: userId, body: text }));
+      return rpc('daymark_add_task_comment', { target_task: String(taskId), comment_body: text, request_nonce: clientNonce });
     },
+    savePreferences: preferences => checked(client.from('notification_preferences').upsert({ user_id: userId, ...preferences, updated_at: new Date().toISOString() })),
     markRead: id => checked(client.from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).eq('id', id).is('read_at', null)),
     markAllRead: () => checked(client.from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).is('read_at', null)),
   };

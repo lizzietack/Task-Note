@@ -7,11 +7,11 @@ const task = (id, owner, title) => ({ id, user_id: owner, title, completed: fals
 
 export async function setup(page, userId = ME) {
   const db = {
-    profiles: [{ id: ME, display_name: 'Raphael', email: 'raphael@example.com', avatar_url: null }, { id: OTHER, display_name: 'Herbert', email: 'herbert@example.com', avatar_url: null }, { id: THIRD, display_name: 'Nana', email: 'nana@example.com', avatar_url: null }],
+    profiles: [{ id: ME, display_name: 'Raphael', email: 'raphael@example.com', avatar_url: null, timezone:'Africa/Accra' }, { id: OTHER, display_name: 'Herbert', email: 'herbert@example.com', avatar_url: null, timezone:'Africa/Accra' }, { id: THIRD, display_name: 'Nana', email: 'nana@example.com', avatar_url: null, timezone:'Africa/Accra' }],
     connections: [{ id: 'c1', requester_id: ME, addressee_id: OTHER, status: 'accepted', created_at: now }, { id: 'c2', requester_id: THIRD, addressee_id: ME, status: 'pending', created_at: now }],
     tasks: [task('owned-task', ME, 'Review supplier payment'), task('shared-task', OTHER, 'Send payment receipt')],
     task_assignments: [{ id: 'a1', task_id: 'shared-task', owner_id: OTHER, assignee_id: ME, status: 'pending', assigned_at: now }],
-    task_comments: [], notifications: [], daymark_email_invites: [], notes: [], attachments: [], deleted_items: [],
+    task_comments: [], task_activity: [{id:'activity-1',task_id:'shared-task',owner_id:OTHER,actor_id:OTHER,assignment_id:'a1',event_type:'assigned',created_at:now}], notifications: [], notification_deliveries: [], notification_preferences: [{ user_id:ME, contact_updates:true, assignment_updates:true, comment_updates:true, task_reminders:true, browser_notifications:true, email_notifications:false, updated_at:now }], daymark_email_invites: [], notes: [], attachments: [], deleted_items: [],
   };
   const calls = [], channels = [];
   const authMetadata = Object.fromEntries(db.profiles.map(person => [person.id, {}]));
@@ -92,6 +92,27 @@ export async function setup(page, userId = ME) {
         if(invite.task_id){assignment={id:`claimed-a-${db.task_assignments.length}`,task_id:invite.task_id,owner_id:invite.inviter_id,assignee_id:current,status:'pending',assigned_at:now};db.task_assignments.push(assignment);}
         invite.status='claimed'; invite.claimed_by=current; return ok({invite_id:invite.id,connection_id:connection.id,task_id:invite.task_id,assignment_id:assignment?.id||null});
       }
+      if (name === 'daymark_add_task_comment') {
+        const existing=db.task_comments.find(comment=>comment.author_id===current&&comment.client_nonce===body.request_nonce);
+        if(existing)return ok(existing.id);
+        const assignment=db.task_assignments.find(a=>a.task_id===body.target_task&&(a.owner_id===current||(a.assignee_id===current&&['accepted','completed'].includes(a.status))));
+        if(!assignment)return bad('You cannot comment on this task');
+        const comment={id:`comment-${db.task_comments.length+1}`,task_id:body.target_task,author_id:current,body:body.comment_body,client_nonce:body.request_nonce,created_at:now};
+        db.task_comments.push(comment);
+        db.task_activity.push({id:`activity-${db.task_activity.length+1}`,task_id:body.target_task,owner_id:assignment.owner_id,actor_id:current,event_type:'commented',created_at:now});
+        return ok(comment.id);
+      }
+      if (name === 'daymark_set_assignment_status') {
+        const a=db.task_assignments.find(a=>a.id===body.target_assignment&&a.assignee_id===current);
+        if(!a)return bad('Assignment not found');
+        if(a.status!==body.target_status){
+          const allowed=(a.status==='pending'&&['accepted','declined'].includes(body.target_status))||(a.status==='accepted'&&body.target_status==='completed');
+          if(!allowed)return bad('This action is no longer available');
+          a.status=body.target_status;
+          db.task_activity.push({id:`activity-${db.task_activity.length+1}`,task_id:a.task_id,owner_id:a.owner_id,actor_id:current,assignment_id:a.id,event_type:body.target_status,created_at:now});
+        }
+        return ok({status:a.status});
+      }
       if (name === 'daymark_respond_contact') { db.connections.find(c=>c.id===body.target_connection).status=body.response; return ok(null); }
       if (name === 'daymark_assign_task') {
         if (failAssign) { failAssign=false; return bad('Temporary connection problem'); }
@@ -111,6 +132,8 @@ export async function setup(page, userId = ME) {
     if (table === 'tasks') rows = rows.filter(t => t.user_id === current || db.task_assignments.some(a => a.task_id === t.id && a.assignee_id === current && ['pending','accepted','completed'].includes(a.status)));
     if (table === 'notes') rows = rows.filter(n=>n.user_id===current);
     if (table === 'task_assignments') rows=rows.filter(a=>a.owner_id===current||a.assignee_id===current);
+    if (table === 'task_activity') rows=rows.filter(activity=>activity.owner_id===current||db.task_assignments.some(a=>a.task_id===activity.task_id&&a.assignee_id===current&&['pending','accepted','completed'].includes(a.status)));
+    if (table === 'notification_preferences') rows=rows.filter(preference=>preference.user_id===current);
     if (table === 'daymark_email_invites') rows=rows.filter(invite=>invite.inviter_id===current);
     for (const [field,value] of url.searchParams) {
       if (value.startsWith('eq.')) rows=rows.filter(r=>String(r[field])===value.slice(3));
@@ -123,7 +146,7 @@ export async function setup(page, userId = ME) {
     if (method === 'PATCH') { rows.forEach(row=>Object.assign(row,body)); return ok(null,204); }
     if (method === 'DELETE') { db[table]=db[table].filter(r=>!rows.includes(r)); return ok(null,204); }
     if (method === 'POST') {
-      for (const row of Array.isArray(body)?body:[body]) { const existing=db[table].find(r=>r.id && r.id===row.id); if(existing)Object.assign(existing,row); else db[table].push({id:row.id||`id-${db[table].length}`,created_at:now,...row}); }
+      for (const row of Array.isArray(body)?body:[body]) { const existing=db[table].find(r=>(r.id&&r.id===row.id)||(table==='notification_preferences'&&r.user_id===row.user_id)); if(existing)Object.assign(existing,row); else db[table].push({id:row.id||`id-${db[table].length}`,created_at:now,...row}); }
       return ok(null,201);
     }
     return bad('Unexpected request');

@@ -1,44 +1,37 @@
-# v1.6.1 validation — 19 September 2026
+# v1.7 validation — 19 September 2026
 
 ## Passed
 
-- `npm test`: 10 tests. Role/status permissions, comment eligibility and validation, accepted contacts, exact installed RPC contracts, secure magic-link invitation routing, error propagation, notification recipient scoping, pagination and per-account legacy-cache migration.
-- `npm run test:browser`: all 18 browser scenarios passed in headless Microsoft Edge across the complete run and focused rerun of a corrected test selector. Existing Supabase client runs against mocked Auth, REST, Storage and WebSocket responses; no live database writes.
-  - Invite an existing account in-app, email an unregistered address, accept/decline contacts and restrict assignment choices.
-  - Save/assign a task; recover from assignment failure without duplicating the saved task.
-  - Assignee accept/comment/complete with no owner editing and no shared-task personal-cache writes.
-  - Realtime notification delivery, 105 unread vs 100 displayed, mark one/all read.
-  - Realtime revocation removes previously visible task details; decline prevents further workflow actions/comment entry.
-  - v1.4 editing, weekly recurrence, quick-note capture, search and account-switch isolation.
-  - Mobile layout and offline personal-note capture with collaboration actions disabled.
-  - Realtime owner task updates without repeated write echoes.
-  - Note checklists, local file attachments, pinning, theme and calendar controls; voice-recording control remains available.
-  - Mobile task-editor height, width, scrolling, safe-area actions, 16px controls and iPhone zoom prevention.
-  - Display-name, email and password updates through Profile & settings, including the professional sign-out action.
-  - WCAG AA contrast checks for dark-mode colored note titles and body text.
-  - Existing-user contact requests and unregistered-user email invitations.
-  - Task invitations tied to an email, secure claim on sign-in, and resulting pending assignment.
-  - New invitees must create a reusable password before the dashboard opens; the session and assigned task remain available after a full page reload.
-  - Earlier magic-link invitees can request a password-setup email from the sign-in screen.
-  - Quick Capture exposes explicit Task and Note choices with Auto removed.
-  - Optional profile-photo upload and display.
-  - Mobile outside-tap navigation closing and the replacement Today/Capture icons.
+- `npm test`: all 10 unit tests passed. These cover assignment permissions and transitions, comment eligibility and validation, accepted-contact direction, exact RPC arguments, failure propagation, public email invitations, idempotent comment nonces, recipient-scoped notification updates, pagination and per-account cache migration.
+- `npm run test:browser`: all 19 mocked browser scenarios passed in one complete headless Microsoft Edge run.
+  - Existing-account requests and invitations to unregistered email addresses.
+  - Secure invitation claim, required reusable-password setup and later sign-in recovery.
+  - Task assignment, accept, decline, complete, comments and owner/assignee boundaries.
+  - Offline assignment responses and comments, visible queue state, reconnect flush and single comment creation.
+  - Activity history for assignment, comments and completion.
+  - Realtime notification counts beyond the 100-item display limit, mark-one and mark-all.
+  - Realtime owner edits, access revocation and 30-second reconciliation behavior.
+  - Invitation resend, cancellation controls and history.
+  - Timezone and notification-preference updates in Profile & settings.
+  - v1.4 editing, recurrence, quick capture, notes, search, checklists, attachments, pinning, theme, calendar and account isolation.
+  - Mobile navigation, task editor sizing, safe-area actions, offline personal notes and dark-note contrast.
 - `npm run build`: successful Vite production build and PWA service-worker generation.
-- Mobile task editor, Profile & settings, invite-password setup and dark colored-note screenshots visually inspected.
-- Supplied environment checked locally: only Supabase URL and a verified public key. No service-role key used.
+- Mobile Assigned to me, Profile & settings, task editor, sidebar, invitation-password setup and dark-note captures were inspected. The desktop Contacts view was also inspected in dark mode.
+- The v1.7 migration retains all legacy v1.5 notification event values, backfills baseline activity for existing assignments and adds the new event values without replacing user data.
+- The frontend accepts only Supabase publishable/anon credentials. The optional delivery worker uses a dedicated Vault-backed secret and the Supabase anon key; no service-role key is used. Resend requests include a stable delivery idempotency key.
 
 ## Not exercised against the live project
 
-No account credentials were supplied. Mock tests verify client behavior, not the live database's RLS policies, function grants, actual realtime publication, SMTP delivery, storage upload or real microphone capture. The additive v1.6 migration was reviewed but not applied to the live Supabase project.
+No live account credentials, migration access, Resend account or production SMTP credentials were supplied. The browser suite uses mocked Auth, REST, Storage and Realtime responses and never writes to the live database.
 
-Before deploying broadly, use two real accounts to invite/accept, assign, accept/comment/complete, and confirm the owner's notification and status. Confirm a third, unrelated account cannot read or mutate those records. Check attachments and reminders on the deployed HTTPS site.
+Run `DAYMARK_V1.7_RELIABLE_DELIVERY.sql` in the existing project before deploying the frontend. Then use two real accounts to confirm invite/accept, assignment, offline response/comment recovery, Activity and notifications. Use a third unrelated account to verify that RLS prevents access.
 
-For public email invitations, configure a production SMTP provider and allow the production Netlify URL in Supabase Auth redirect URLs. Test an invitation to an address outside the Supabase organization before announcing the feature.
+The optional email worker still needs a verified Resend sender, a Vault secret, Edge Function deployment and the two schedules described in `SUPABASE_V1.7_SETUP.md`. Confirm one assignment, one comment and one due reminder reaches a real mailbox only once.
 
 ## Preserved boundaries
 
-- Owner task completion and individual assignment completion are separate in the installed migration.
-- Comments are inserted under the existing task-participant RLS policy and update live. No additional comment-notification trigger is installed.
-- Existing contact and assignment uniqueness constraints remain enforced. A newly claimed email invitation safely reactivates its matching task assignment as pending.
-- Browser reminders still require the app to be running. Collaboration requires connectivity; personal tasks and notes retain local editing.
-- Existing v1.4 device data is claimed once by the first account after upgrade; later accounts have separate caches and delete queues. Legacy data is not deleted.
+- The task owner controls task content and its checkbox. Each assignee controls only their assignment response and completion state.
+- Shared tasks do not enter an assignee's private task cache. Personal tasks and notes remain available offline.
+- Queued collaboration actions are stored per account. Comment retries reuse their nonce, and assignment-state retries are idempotent.
+- Notification preferences gate new in-app and email events. Browser notifications require the app to be running; email copies require the optional worker.
+- Existing v1.4 data and v1.5/v1.6 collaboration records are retained by the additive migration.

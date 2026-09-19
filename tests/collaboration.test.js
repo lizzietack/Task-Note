@@ -36,8 +36,8 @@ test('RPC calls match the installed text-ID migration and reject unauthorized tr
     { name: 'daymark_invite_contact', args: { invitee_email: 'colleague@example.com' } },
     { name: 'daymark_respond_contact', args: { target_connection: 'c', response: 'accepted' } },
     { name: 'daymark_assign_task', args: { target_task: '123', target_user: 'other' } },
-    { name: 'daymark_respond_assignment', args: { target_assignment: 'a', response: 'declined' } },
-    { name: 'daymark_complete_assignment', args: { target_assignment: 'a' } },
+    { name: 'daymark_set_assignment_status', args: { target_assignment: 'a', target_status: 'declined' } },
+    { name: 'daymark_set_assignment_status', args: { target_assignment: 'a', target_status: 'completed' } },
   ]);
   assert.throws(() => api.respondAssignment({ id: 'a', assignee_id: 'other', status: 'accepted' }, 'completed'));
   assert.throws(() => api.respondContact('c', 'cancelled'));
@@ -70,12 +70,12 @@ test('unknown emails receive a secure Supabase magic-link invitation without a s
     assert.deepEqual(calls[1],{name:'daymark_create_email_invite',args:{invitee_email:'new.person@example.com',target_task:null}});
   } finally { globalThis.window = previousWindow; }
 });
-test('comments validate length and insert only caller-authored task comments', async () => {
-  let inserted;
-  const api = collaborationApi({ from: name => { assert.equal(name, 'task_comments'); return { insert: async row => { inserted = row; return { data: null }; } }; } }, 'me');
+test('comments validate length and use an idempotent client nonce', async () => {
+  const calls=[];
+  const api = collaborationApi({ rpc: async (name,args) => { calls.push({name,args}); return {data:'comment-id',error:null}; } }, 'me');
   assert.throws(() => api.addComment('t', '   ')); assert.throws(() => api.addComment('t', 'x'.repeat(2001)));
-  await api.addComment(42, '  Progress update  ');
-  assert.deepEqual(inserted, { task_id: '42', author_id: 'me', body: 'Progress update' });
+  await api.addComment(42, '  Progress update  ', '11111111-1111-4111-8111-111111111111');
+  assert.deepEqual(calls[0], {name:'daymark_add_task_comment',args:{target_task:'42',comment_body:'Progress update',request_nonce:'11111111-1111-4111-8111-111111111111'}});
 });
 test('read notifications are scoped to the authenticated recipient and unread rows', async () => {
   const calls = [];

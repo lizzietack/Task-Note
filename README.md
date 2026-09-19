@@ -1,8 +1,20 @@
-# Daymark — Tasks & Notes v1.6.1
+# Daymark — Tasks & Notes v1.7
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
 ## What's new
+
+### v1.7 reliable delivery
+
+- Every shared task has a permission-aware Activity timeline for assignment, response, comment, owner-edit and completion events.
+- Assignees can accept, decline, complete and comment while offline. Daymark stores the action in a per-account outbox, shows its pending state and retries after reconnecting. Comment requests carry a unique nonce so a lost response cannot create duplicates.
+- Email invitations can be resent, cancelled and reviewed in invitation history. Resending creates a fresh secure token and invalidates the earlier link.
+- Profile & settings now includes an IANA timezone and separate preferences for contacts, assignments, comments, reminders, browser notifications and optional email fallback.
+- Scheduled reminders are generated in the user's timezone and deduplicated in the database. An optional Resend worker processes private email-delivery jobs without a service-role key and uses provider idempotency keys for safe retries.
+- New comments and owner task edits generate realtime notifications for active participants, subject to each recipient's preferences.
+- GitHub Actions verifies unit tests, the production build and browser tests on every pull request and main-branch update.
+
+Before deploying v1.7, run `DAYMARK_V1.7_RELIABLE_DELIVERY.sql` once and follow `SUPABASE_V1.7_SETUP.md`. The email worker is optional; all other v1.7 features work after the migration.
 
 ### v1.6.1 durable invited accounts
 
@@ -40,11 +52,11 @@ Before deploying v1.6, run `DAYMARK_V1.6_EMAIL_INVITES_AND_AVATARS.sql` once in 
 - Realtime updates plus refresh on reconnect, returning to the tab and every 30 seconds while visible.
 - Owners retain task editing/deletion. Assignees use the secure workflow functions. Shared tasks never enter personal sync or local storage. Account caches and delete queues are isolated.
 
-Assignment completion and the owner's task checkbox remain separate, matching the existing migration. Recurring tasks create a private next occurrence. Comments are task-wide; accepted/completed participants can post. Collaboration needs connectivity; personal task/note editing remains offline-friendly.
+Assignment completion and the owner's task checkbox remain separate. Recurring tasks create a private next occurrence. Comments are task-wide; accepted/completed participants can post. Personal data remains offline-friendly, and supported collaboration actions now queue safely while offline.
 
 ## Existing Supabase project
 
-**Do not rerun the v1.4 setup SQL to upgrade your installation.** The original SQL files are retained for reference. This version uses your already-installed collaboration tables, policies and functions without replacing them.
+**Do not rerun the v1.4 setup SQL to upgrade your installation.** Run only the additive v1.7 migration after the earlier collaboration and v1.6 migrations.
 
 Required: profiles (including email and avatar_url), text task IDs, connections, task_assignments, task_comments, notifications, daymark_email_invites, and the existing v1.4 tables/storage bucket. The client calls these exact functions:
 
@@ -58,14 +70,19 @@ Required: profiles (including email and avatar_url), text task IDs, connections,
 | daymark_create_email_invite | invitee_email, target_task |
 | daymark_cancel_email_invite | target_invite |
 | daymark_claim_email_invite | invite_token |
+| daymark_add_task_comment | target_task, comment_body, request_nonce |
+| daymark_set_assignment_status | target_assignment, target_status |
+| daymark_queue_due_reminders | none; scheduled database job |
+| daymark_claim_notification_deliveries | worker_secret, batch_limit |
+| daymark_finish_notification_delivery | worker_secret, delivery result fields |
 
-Contact/assignment notifications come from those functions. Comments use the existing RLS-protected insert policy; no new comment-notification trigger is added. Email links are sent by Supabase Auth with `signInWithOtp`; the frontend contains only the publishable key. Each signed-in user updates only their own profile email because the v1.4 Auth trigger did not populate it.
+Contact and assignment notifications come from the installed functions. v1.7 adds comment/task-update triggers, notification preferences and an email-delivery queue. Email invitation links are sent by Supabase Auth with `signInWithOtp`; the frontend contains only the publishable key. Each signed-in user updates only their own profile email and timezone.
 
 Retain the supplied public `.env` connection, or configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env.example`. No service-role key is used; secret/service-role keys are rejected by the frontend. Realtime requires the collaboration tables in your existing `supabase_realtime` publication. See [Supabase documentation](https://supabase.com/docs/guides/realtime/postgres-changes).
 
 ## Run and deploy
 
-Use Node.js 22+ (validated with Node 24):
+Use Node.js 20+ (validated locally with Node 24 and in GitHub Actions with Node 20):
 
 ```sh
 npm ci
@@ -82,4 +99,4 @@ The first account used after upgrade claims the old v1.4 device cache once; othe
 
 ## Validation boundary
 
-See `VALIDATION.md`. No live credentials were supplied: actual RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, invite/accept, assign, accept/comment/complete and check the owner's notification. Recheck attachments and reminders on deployed HTTPS. As in v1.4, browser reminders require Daymark to be running; closed-app delivery requires a push/native scheduling backend.
+See `VALIDATION.md`. No live credentials were supplied: actual RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, invite/accept, assign, queue an offline response/comment, reconnect, and check the Activity timeline and notifications. Browser notifications require Daymark to be running; closed-app email delivery requires the optional v1.7 worker.

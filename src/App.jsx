@@ -136,6 +136,8 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
   const [assignedDetail, setAssignedDetail] = useState(null);
   const [accountSettings, setAccountSettings] = useState(false);
   const [notice, setNotice] = useState(null);
+  const seenNotifications = useRef(new Set());
+  const notificationsReady = useRef(false);
   const [pendingInviteToken, setPendingInviteToken] = useState(() => {
     const urlToken = new URL(window.location.href).searchParams.get('daymark_invite');
     if (urlToken) localStorage.setItem('daymark.pending-email-invite.v1', urlToken);
@@ -171,7 +173,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
 
 
   useEffect(()=>{
-    if(typeof window==='undefined' || !('Notification' in window) || Notification.permission!=='granted') return;
+    if(typeof window==='undefined' || !collaboration.preferences.task_reminders || !collaboration.preferences.browser_notifications || !('Notification' in window) || Notification.permission!=='granted') return;
     const key='daymark.notifications.sent.v1';
     const check=()=>{
       const now=Date.now();
@@ -195,7 +197,24 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
       }
     };
     check(); const timer=setInterval(check,30000); return()=>clearInterval(timer);
-  },[tasks]);
+  },[tasks,collaboration.preferences.task_reminders,collaboration.preferences.browser_notifications]);
+
+  useEffect(() => {
+    const rows = collaboration.notifications || [];
+    if (!notificationsReady.current) {
+      rows.forEach(notification => seenNotifications.current.add(notification.id));
+      notificationsReady.current = true;
+      return;
+    }
+    const canNotify = collaboration.preferences.browser_notifications && 'Notification' in window && Notification.permission === 'granted';
+    rows.forEach(notification => {
+      if (!seenNotifications.current.has(notification.id) && !notification.read_at && canNotify) {
+        const alert = new Notification(notification.title, { body: notification.message, tag: `daymark-collaboration-${notification.id}` });
+        alert.onclick = () => { window.focus(); navigateNotification(notification); alert.close(); };
+      }
+      seenNotifications.current.add(notification.id);
+    });
+  }, [collaboration.notifications, collaboration.preferences.browser_notifications]);
 
   useEffect(() => {
     const modalOpen = composer || editingTask || editingNote || assignedDetail || accountSettings;
@@ -334,7 +353,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
     </main>
 
     {assignedDetail && <AssignedDetail c={collaboration} assignmentId={assignedDetail} onClose={()=>setAssignedDetail(null)}/>}
-    {accountSettings && <AccountSettings auth={auth} profile={ownProfile} dark={dark} setDark={setDark} onSaved={collaboration.refresh} onClose={()=>setAccountSettings(false)}/>}
+    {accountSettings && <AccountSettings auth={auth} collaboration={collaboration} profile={ownProfile} dark={dark} setDark={setDark} onSaved={collaboration.refresh} onClose={()=>setAccountSettings(false)}/>}
     <button className="fab" onClick={()=>openAdd('quick')} aria-label="Add"><Plus/></button>
 
     {(composer || editingTask || editingNote) && <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget){setComposer(false);setEditingTask(null);setEditingNote(null)}}}>
