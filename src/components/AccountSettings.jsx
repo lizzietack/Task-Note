@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Check, Download, Trash2, X } from 'lucide-react';
 
 function friendlyEmailName(email = '') {
-  return email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) || 'Daymark user';
+  return email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) || 'JotRelay user';
 }
 
 export function accountDisplayName(profile, user) {
@@ -68,7 +68,7 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
           <div className="photo-actions"><button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => photoRef.current?.click()}><Camera size={16}/>{busy === 'avatar' ? 'Uploading…' : 'Choose photo'}</button>{(profile?.avatar_url || auth.session.user.user_metadata?.avatar_url) && <button type="button" className="text-btn danger-text" disabled={Boolean(busy)} onClick={() => run('remove-avatar', auth.removeAvatar, 'Your profile photo has been removed.')}><Trash2 size={15}/>{busy === 'remove-avatar' ? 'Removing…' : 'Remove photo'}</button>}</div>
           <small className="field-help">PNG, JPEG, WebP or GIF, up to 5 MB.</small>
         </SettingsSection>
-        <SettingsSection title="Display name" description="This is the name your Daymark contacts see.">
+        <SettingsSection title="Display name" description="This is the name your JotRelay contacts see.">
           <label>Name<input value={name} maxLength={80} autoComplete="name" onChange={event => setName(event.target.value)}/></label>
           <button type="button" className="secondary" disabled={Boolean(busy) || name.trim() === accountDisplayName(profile, auth.session.user)} onClick={() => run('name', () => auth.updateDisplayName(name), 'Your name has been updated.')}>{busy === 'name' ? 'Saving…' : 'Save name'}</button>
         </SettingsSection>
@@ -80,11 +80,11 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
           <div className="settings-passwords"><label>New password<input type="password" value={password} autoComplete="new-password" minLength={8} onChange={event => setPassword(event.target.value)}/></label><label>Confirm password<input type="password" value={confirm} autoComplete="new-password" minLength={8} onChange={event => setConfirm(event.target.value)}/></label></div>
           <button type="button" className="secondary" disabled={Boolean(busy) || password.length < 8 || password !== confirm} onClick={() => run('password', async () => { if (password !== confirm) throw new Error('The passwords do not match.'); await auth.updatePassword(password); setPassword(''); setConfirm(''); }, 'Your password has been changed.')}>{busy === 'password' ? 'Updating…' : 'Change password'}</button>
         </SettingsSection>
-        <SettingsSection title="Timezone" description="Used for scheduled reminders when Daymark is closed.">
+        <SettingsSection title="Timezone" description="Used for scheduled reminders when JotRelay is closed.">
           <label>Timezone<input value={timezone} maxLength={80} onChange={event => setTimezone(event.target.value)} placeholder="Africa/Accra"/></label>
           <div className="photo-actions"><button type="button" className="secondary" disabled={Boolean(busy) || timezone === profile?.timezone} onClick={() => run('timezone', () => auth.updateTimezone(timezone), 'Your timezone has been updated.')}>{busy === 'timezone' ? 'Saving…' : 'Save timezone'}</button><button type="button" className="text-btn" disabled={Boolean(busy) || timezone === detectedTimezone} onClick={() => setTimezone(detectedTimezone)}>Use this device</button></div>
         </SettingsSection>
-        <SettingsSection title="Notifications" description="Choose which collaboration updates Daymark should deliver.">
+        <SettingsSection title="Notifications" description="Choose which collaboration updates JotRelay should deliver.">
           <div className="settings-options">
             {[
               ['contact_updates','Contact requests'],
@@ -92,7 +92,7 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
               ['comment_updates','Task comments'],
               ['task_reminders','Scheduled task reminders'],
               ['browser_notifications','Browser notifications'],
-              ['email_notifications','Email copies (useful when Daymark is closed)'],
+              ['email_notifications','Email copies (useful when JotRelay is closed)'],
             ].map(([key,label]) => <label className="settings-check" key={key}><input type="checkbox" checked={Boolean(preferences[key])} onChange={event => setPreferences(current => ({ ...current, [key]: event.target.checked }))}/><span>{label}</span></label>)}
           </div>
           <button type="button" className="secondary" disabled={Boolean(busy) || !collaboration.available} onClick={() => run('notifications', async () => {
@@ -101,12 +101,12 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
           }, 'Your notification preferences have been saved.')}>{busy === 'notifications' ? 'Saving…' : 'Save notification preferences'}</button>
           <small className="field-help">Email copies start after the optional notification worker is configured.</small>
         </SettingsSection>
-        <SettingsSection title="Your data" description="Download a readable copy of the information stored in your Daymark account.">
-          <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => run('export', onExport, 'Your Daymark export has been downloaded.')}><Download size={16}/>{busy === 'export' ? 'Preparing export…' : 'Download my data'}</button>
+        <SettingsSection title="Your data" description="Download a readable copy of the information stored in your JotRelay account.">
+          <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => run('export', onExport, 'Your JotRelay export has been downloaded.')}><Download size={16}/>{busy === 'export' ? 'Preparing export…' : 'Download my data'}</button>
           <small className="field-help">The JSON export includes tasks, notes and collaboration records. Attachment details are included, but the files themselves remain in secure storage.</small>
         </SettingsSection>
         <SettingsSection title="Appearance" description="Use the theme that feels most comfortable."><ThemeSwitch dark={dark} setDark={setDark}/></SettingsSection>
-        <section className="settings-signout"><div><h3>Sign out</h3><p>Your synced data remains available when you sign in again.</p></div><button type="button" className="signout-button" disabled={Boolean(busy)} onClick={() => run('signout', auth.signOut, 'Signed out.')}>Sign out of Daymark</button></section>
+        <section className="settings-signout"><div><h3>Sign out</h3><p>Your synced data remains available when you sign in again.</p></div><button type="button" className="signout-button" disabled={Boolean(busy)} onClick={() => run('signout', auth.signOut, 'Signed out.')}>Sign out of JotRelay</button></section>
       </div>
     </div>
   </div>;

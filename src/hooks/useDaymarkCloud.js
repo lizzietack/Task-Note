@@ -178,7 +178,7 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes, session }) {
       if (changedAttachments && mounted.current) setNotes(prev => prev.map(n => { const uploaded = noteCopies.find(copy => String(copy.id) === String(n.id)); return uploaded && stamp(uploaded) === stamp(n) ? uploaded : n; }));
       setSyncState('synced'); setLastSynced(Date.now());
     } catch (error) {
-      console.error('Daymark cloud sync failed', error); setSyncState('error'); setSyncError(error.message || 'Cloud sync failed. Your changes remain saved on this device.');
+      console.error('JotRelay cloud sync failed', error); setSyncState('error'); setSyncError(error.message || 'Cloud sync failed. Your changes remain saved on this device.');
     } finally {
       syncingRef.current = false;
       if (mounted.current && latestSync.current !== syncNow) { clearTimeout(timerRef.current); timerRef.current = setTimeout(() => latestSync.current?.(), 900); }
@@ -202,7 +202,7 @@ export function useDaymarkCloud({ tasks, setTasks, notes, setNotes, session }) {
         localStorage.setItem(`${IMPORT_KEY_PREFIX}${session.user.id}`, '1');
         setSyncState('synced'); setLastSynced(Date.now());
       } catch (error) {
-        console.error('Daymark cloud bootstrap failed', error); if (cancelled) return; hydratedRef.current = false; setSyncState('error'); setSyncError(error.message || 'Could not connect to Daymark Cloud. Local data is still available.');
+        console.error('JotRelay cloud bootstrap failed', error); if (cancelled) return; hydratedRef.current = false; setSyncState('error'); setSyncError(error.message || 'Could not connect to JotRelay Cloud. Local data is still available.');
       }
     })();
     return () => { cancelled = true; };

@@ -8,17 +8,17 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['daymark-icon.svg'],
+      includeAssets: ['jotrelay-icon.svg'],
       manifest: {
-        name: 'Daymark — Tasks & Notes',
-        short_name: 'Daymark',
+        name: 'JotRelay — Tasks & Notes',
+        short_name: 'JotRelay',
         description: 'A calm, offline-first everyday task and notes organizer.',
         theme_color: '#0f766e',
         background_color: '#f5f7f6',
         display: 'standalone',
         start_url: '/',
         scope: '/',
-        icons: [{ src: '/daymark-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+        icons: [{ src: '/jotrelay-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],

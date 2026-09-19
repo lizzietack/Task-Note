@@ -9,7 +9,7 @@ export const canComment = (assignments, userId) => assignments.some(a =>
 export const acceptedContacts = (connections, userId) => [...new Set(connections
   .filter(c => c.status === 'accepted' && [c.requester_id, c.addressee_id].includes(userId))
   .map(c => c.requester_id === userId ? c.addressee_id : c.requester_id))];
-export const personName = profile => profile?.display_name || profile?.email || 'Daymark user';
+export const personName = profile => profile?.display_name || profile?.email || 'JotRelay user';
 
 export async function checked(query) {
   const result = await query;
@@ -32,7 +32,7 @@ export function collaborationApi(client, userId) {
     const normalized = email.trim().toLowerCase();
     const response = await rpc('daymark_create_email_invite', { invitee_email: normalized, target_task: taskId ? String(taskId) : null });
     const invitation = Array.isArray(response) ? response[0] : response;
-    if (!invitation?.invite_token || !invitation?.invite_id) throw new Error('Daymark could not create the secure invitation.');
+    if (!invitation?.invite_token || !invitation?.invite_id) throw new Error('JotRelay could not create the secure invitation.');
     const redirect = new URL(window.location.origin);
     redirect.searchParams.set('daymark_invite', invitation.invite_token);
     redirect.searchParams.set('daymark_setup', '1');
@@ -46,7 +46,7 @@ export function collaborationApi(client, userId) {
     });
     if (error) {
       try { await rpc('daymark_cancel_email_invite', { target_invite: invitation.invite_id }); } catch {}
-      if (error.code === 'email_address_not_authorized' || /email address not authorized/i.test(error.message || '')) throw new Error('Email delivery is not configured for public invitations yet. Ask the Daymark administrator to enable custom SMTP in Supabase.');
+      if (error.code === 'email_address_not_authorized' || /email address not authorized/i.test(error.message || '')) throw new Error('Email delivery is not configured for public invitations yet. Ask the JotRelay administrator to enable custom SMTP in Supabase.');
       throw error;
     }
     return invitation;

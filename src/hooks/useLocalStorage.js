@@ -7,7 +7,7 @@ export const useLocalStorage = (key, initialValue) => {
       const item = window.localStorage.getItem(key);
       return item == null ? initialValue : JSON.parse(item);
     } catch (error) {
-      console.warn(`Daymark could not read localStorage key "${key}"`, error);
+      console.warn(`JotRelay could not read localStorage key "${key}"`, error);
       return initialValue;
     }
   }, [key, initialValue]);
@@ -21,7 +21,7 @@ export const useLocalStorage = (key, initialValue) => {
         try {
           window.localStorage.setItem(key, JSON.stringify(next));
         } catch (error) {
-          console.warn(`Daymark could not save localStorage key "${key}"`, error);
+          console.warn(`JotRelay could not save localStorage key "${key}"`, error);
         }
       }
       return next;
@@ -34,7 +34,7 @@ export const useLocalStorage = (key, initialValue) => {
       try {
         setStoredValue(event.newValue == null ? initialValue : JSON.parse(event.newValue));
       } catch (error) {
-        console.warn(`Daymark could not sync localStorage key "${key}"`, error);
+        console.warn(`JotRelay could not sync localStorage key "${key}"`, error);
       }
     };
     window.addEventListener('storage', handleStorageChange);

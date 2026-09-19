@@ -83,7 +83,7 @@ test('removing a contact revokes active shared tasks and still allows a later re
   expect(state.errors).toEqual([]);
 });
 
-test('owner can email a task to someone who has not joined Daymark yet', async ({ page }) => {
+test('owner can email a task to someone who has not joined JotRelay yet', async ({ page }) => {
   const state = await setup(page);
   await page.getByRole('button',{name:'Tasks',exact:true}).click();
   await page.getByRole('button',{name:'New task',exact:true}).click();
@@ -110,7 +110,7 @@ test('recipient claims an emailed task and can accept or decline it in real time
   expect(state.errors).toEqual([]);
 });
 
-test('a new invited user must create a reusable password before opening Daymark', async ({ page }) => {
+test('a new invited user must create a reusable password before opening JotRelay', async ({ page }) => {
   const state = await setup(page);
   state.db.task_assignments = [];
   state.addEmailInvite({inviter_id:OTHER,invitee_email:'raphael@example.com',task_id:'shared-task',mock_token:'new-user-token'});
@@ -121,19 +121,19 @@ test('a new invited user must create a reusable password before opening Daymark'
     localStorage.setItem(key,JSON.stringify(saved));
   });
   await page.goto('/?daymark_invite=new-user-token&daymark_setup=1');
-  const setupDialog=page.getByRole('dialog',{name:'Create your Daymark password'});
+  const setupDialog=page.getByRole('dialog',{name:'Create your JotRelay password'});
   await expect(setupDialog).toBeVisible();
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:'test-results/mobile-invite-password-setup.png',animations:'disabled'});
   await expect.poll(()=>state.db.daymark_email_invites.find(invite=>invite.mock_token==='new-user-token')?.status).toBe('claimed');
   await setupDialog.getByLabel('New password').fill('return-to-daymark-123');
   await setupDialog.getByLabel('Confirm password').fill('return-to-daymark-123');
-  await setupDialog.getByRole('button',{name:'Create password and open Daymark'}).click();
+  await setupDialog.getByRole('button',{name:'Create password and open JotRelay'}).click();
   await expect(setupDialog).toHaveCount(0);
   await expect(page).toHaveURL(/^(?!.*daymark_(invite|setup))/);
   expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.password==='return-to-daymark-123'&&call.body?.data?.daymark_password_created===true)).toBe(true);
   await page.reload();
-  await expect(page.getByRole('dialog',{name:'Create your Daymark password'})).toHaveCount(0);
+  await expect(page.getByRole('dialog',{name:'Create your JotRelay password'})).toHaveCount(0);
   await page.locator('button.menu').click();
   await page.getByRole('button',{name:'Assigned to me',exact:false}).click();
   await expect(page.getByRole('button',{name:'Send payment receipt',exact:true})).toBeVisible();
@@ -143,7 +143,7 @@ test('a new invited user must create a reusable password before opening Daymark'
 test('an earlier invitee can request a password link from the sign-in screen', async ({ page }) => {
   const state = await setup(page);
   await page.locator('.sidebar-profile').click();
-  await page.getByRole('button',{name:'Sign out of Daymark'}).click();
+  await page.getByRole('button',{name:'Sign out of JotRelay'}).click();
   await page.getByLabel('Email').fill('raphael@example.com');
   await page.getByRole('button',{name:'Forgot or never created a password?'}).click();
   await expect(page.getByText('Check your email for a secure link',{exact:false})).toBeVisible();
@@ -238,7 +238,7 @@ test('v1.4 task editing, recurrence, note capture, search and account separation
   await page.locator('.search-large input').fill('meeting');
   await expect(page.getByText('the meeting room code',{exact:true})).toBeVisible();
   await page.locator('.sidebar-profile').click();
-  await page.getByRole('button',{name:'Sign out of Daymark'}).click();
+  await page.getByRole('button',{name:'Sign out of JotRelay'}).click();
   await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
   await page.getByLabel('Email').fill('herbert@example.com'); await page.getByLabel('Password').fill('test-password');
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
@@ -353,7 +353,7 @@ test('profile settings show the name, update identity and provide account securi
   await page.getByLabel('Timezone').fill('Europe/London');
   await page.getByRole('button',{name:'Save timezone'}).click();
   await expect(page.locator('.settings-modal .inline-success')).toContainText('timezone has been updated');
-  await page.getByLabel('Email copies (useful when Daymark is closed)').check();
+  await page.getByLabel('Email copies (useful when JotRelay is closed)').check();
   await page.getByRole('button',{name:'Save notification preferences'}).click();
   await expect(page.locator('.settings-modal .inline-success')).toContainText('notification preferences have been saved');
   expect(state.db.profiles.find(profile=>profile.id===ME).timezone).toBe('Europe/London');
@@ -361,7 +361,7 @@ test('profile settings show the name, update identity and provide account securi
   expect(state.db.profiles.find(profile=>profile.id===ME).avatar_url).toContain('/daymark-avatars/');
   expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.email==='raphael.new@example.com')).toBe(true);
   expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.password==='new-password-123')).toBe(true);
-  await expect(page.getByRole('button',{name:'Sign out of Daymark'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Sign out of JotRelay'})).toBeVisible();
   await page.setViewportSize({width:390,height:844});
   await expect(page.getByRole('dialog',{name:'Profile & settings'})).toHaveCSS('width','390px');
   await page.screenshot({path:'test-results/mobile-profile-settings.png',animations:'disabled'});
@@ -374,9 +374,9 @@ test('account export downloads personal and collaboration data without session c
   const downloadPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'Download my data'}).click();
   const download=await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^daymark-export-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(download.suggestedFilename()).toMatch(/^jotrelay-export-\d{4}-\d{2}-\d{2}\.json$/);
   const data=JSON.parse(await readFile(await download.path(),'utf8'));
-  expect(data.appVersion).toBe('1.8.0');
+  expect(data.appVersion).toBe('1.8.1');
   expect(data.account.id).toBe(ME);
   expect(data.tasks.some(task=>task.id==='owned-task')).toBe(true);
   expect(data.collaboration.assignments.some(assignment=>assignment.id==='a2')).toBe(true);

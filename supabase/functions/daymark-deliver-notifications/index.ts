@@ -53,7 +53,7 @@ Deno.serve(async request => {
             from: env('DAYMARK_FROM_EMAIL'),
             to: [delivery.recipient_email],
             subject: delivery.title,
-            html: `<div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto;color:#17211f"><h2>${escapeHtml(delivery.title)}</h2><p style="line-height:1.6">${escapeHtml(delivery.message)}</p><p><a href="${escapeHtml(env('DAYMARK_SITE_URL'))}" style="display:inline-block;background:#0f766e;color:white;text-decoration:none;padding:11px 16px;border-radius:8px">Open Daymark</a></p><p style="font-size:12px;color:#66726f">You can change email notifications in Profile &amp; settings.</p></div>`,
+            html: `<div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:auto;color:#17211f"><h2>${escapeHtml(delivery.title)}</h2><p style="line-height:1.6">${escapeHtml(delivery.message)}</p><p><a href="${escapeHtml(env('DAYMARK_SITE_URL'))}" style="display:inline-block;background:#0f766e;color:white;text-decoration:none;padding:11px 16px;border-radius:8px">Open JotRelay</a></p><p style="font-size:12px;color:#66726f">You can change email notifications in Profile &amp; settings.</p></div>`,
           }),
         });
         const result = await response.json().catch(() => ({}));
@@ -77,7 +77,7 @@ Deno.serve(async request => {
 
     return Response.json({ claimed: (data || []).length, sent, failed });
   } catch (error) {
-    console.error('Daymark notification worker failed', error);
+    console.error('JotRelay notification worker failed', error);
     return Response.json({ error: error instanceof Error ? error.message : 'Worker failed' }, { status: 500 });
   }
 });

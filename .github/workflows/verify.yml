@@ -1,4 +1,4 @@
-name: Verify Daymark
+name: Verify JotRelay
 
 on:
   pull_request:

@@ -1,8 +1,13 @@
-# Daymark — Tasks & Notes v1.8
+# JotRelay — Tasks & Notes v1.8.1
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
 ## What's new
+
+### v1.8.1 JotRelay brand refresh
+
+- The app, browser title, installable-app metadata, reminders, authentication, settings and collaboration copy now use the JotRelay name.
+- Existing `daymark_*` database functions, storage buckets, cache keys and invitation parameters remain unchanged so current accounts and synced data continue working.
 
 ### v1.8 collaboration control and data ownership
 
@@ -10,7 +15,7 @@ Updated from the supplied v1.4 project. Existing quick capture, recurrence, remi
 - Removing an accepted contact immediately cancels active assignments in both directions. The former contact loses shared-task, comment and profile access while each owner keeps their task and discussion history.
 - A cancelled or declined relationship can be reconnected through a new contact request. A completed, declined or cancelled assignment can be sent again without creating a duplicate record.
 - Contact requests that are still pending can be cancelled by their sender.
-- **Download my data** exports the signed-in user's Daymark content and collaboration history as JSON without authentication tokens or private service credentials.
+- **Download my data** exports the signed-in user's JotRelay content and collaboration history as JSON without authentication tokens or private service credentials.
 - Permission-aware controls, activity events and notifications explain assignment cancellation and contact removal to both people.
 
 Before deploying v1.8, run `DAYMARK_V1.8_COLLABORATION_CONTROLS.sql` once after the v1.7 migration and follow `SUPABASE_V1.8_SETUP.md`.
@@ -18,7 +23,7 @@ Before deploying v1.8, run `DAYMARK_V1.8_COLLABORATION_CONTROLS.sql` once after 
 ### v1.7 reliable delivery
 
 - Every shared task has a permission-aware Activity timeline for assignment, response, comment, owner-edit and completion events.
-- Assignees can accept, decline, complete and comment while offline. Daymark stores the action in a per-account outbox, shows its pending state and retries after reconnecting. Comment requests carry a unique nonce so a lost response cannot create duplicates.
+- Assignees can accept, decline, complete and comment while offline. JotRelay stores the action in a per-account outbox, shows its pending state and retries after reconnecting. Comment requests carry a unique nonce so a lost response cannot create duplicates.
 - Email invitations can be resent, cancelled and reviewed in invitation history. Resending creates a fresh secure token and invalidates the earlier link.
 - Profile & settings now includes an IANA timezone and separate preferences for contacts, assignments, comments, reminders, browser notifications and optional email fallback.
 - Scheduled reminders are generated in the user's timezone and deduplicated in the database. An optional Resend worker processes private email-delivery jobs without a service-role key and uses provider idempotency keys for safe retries.
@@ -29,14 +34,14 @@ Before deploying v1.7, run `DAYMARK_V1.7_RELIABLE_DELIVERY.sql` once and follow 
 
 ### v1.6.1 durable invited accounts
 
-- A person joining from an email invitation must create an eight-character-or-longer password before the Daymark dashboard becomes available.
+- A person joining from an email invitation must create an eight-character-or-longer password before the JotRelay dashboard becomes available.
 - The invitation is claimed securely while password setup is displayed, so closing the tab does not detach the assigned task from the new account.
 - The sign-in screen includes **Forgot or never created a password?** for recipients who joined through an earlier invitation and need permanent access to their account.
 - Quick Capture now uses explicit **Task** and **Note** choices. The unused Auto option and sparkle icon have been removed.
 
 ### v1.6 open invitations and personal profiles
 
-- Invite any email address. Existing Daymark users receive an in-app contact request; a new user receives a secure Supabase magic link and is automatically connected after joining with the invited email.
+- Invite any email address. Existing JotRelay users receive an in-app contact request; a new user receives a secure Supabase magic link and is automatically connected after joining with the invited email.
 - Invite an unregistered person directly from the task editor. The invitation stays attached to that task; after joining, the recipient can accept, decline, comment and complete it through the existing permission-aware workflow.
 - Email invitation tokens are random, stored only as hashes, expire after 24 hours and can be claimed only by the matching authenticated email.
 - Optional profile photos appear in the sidebar, settings and collaboration views. Images are limited to 5 MB and only the owner can upload, replace or remove them.
@@ -56,7 +61,7 @@ Before deploying v1.6, run `DAYMARK_V1.6_EMAIL_INVITES_AND_AVATARS.sql` once in 
 
 ### v1.5 collaboration
 
-- Contacts: invite an existing Daymark user by exact email; accept or decline requests.
+- Contacts: invite an existing JotRelay user by exact email; accept or decline requests.
 - Assign to: select an accepted contact in the task editor. Failed assignments preserve the saved task for retry.
 - Assigned to me: pending, accepted, completed and past assignments; accept/decline/complete actions and lightweight comments.
 - Notification bell: unread count across all notifications, latest 100 entries, navigation, mark one/all read.
@@ -112,4 +117,4 @@ The first account used after upgrade claims the old v1.4 device cache once; othe
 
 ## Validation boundary
 
-See `VALIDATION.md`. No live credentials were supplied: actual RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, invite/accept, assign, cancel an assignment, remove and reconnect the contact, and verify revoked access. Browser notifications require Daymark to be running; closed-app email delivery requires the optional notification worker.
+See `VALIDATION.md`. No live credentials were supplied: actual RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, invite/accept, assign, cancel an assignment, remove and reconnect the contact, and verify revoked access. Browser notifications require JotRelay to be running; closed-app email delivery requires the optional notification worker.

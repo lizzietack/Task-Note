@@ -1,4 +1,4 @@
-# Move Daymark/JotRelay from Netlify to Vercel
+# Move JotRelay/JotRelay from Netlify to Vercel
 
 Keep the current Netlify deployment online until the Vercel production deployment, custom domain, authentication redirects and email invitation flow have all been verified.
 

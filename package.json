@@ -1,9 +1,9 @@
 {
-  "name": "daymark-tasks-notes",
+  "name": "jotrelay-tasks-notes",
   "private": true,
-  "version": "1.8.0",
+  "version": "1.8.1",
   "type": "module",
-  "description": "Daymark is a calm, offline-first everyday task and notes organizer.",
+  "description": "JotRelay is a calm, offline-first everyday task and notes organizer.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
