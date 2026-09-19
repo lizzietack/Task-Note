@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, Bell, CalendarCheck2, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight,
   Circle, Clock3, File, FileText, Image as ImageIcon, Inbox, ListTodo, Menu, Mic, MoreHorizontal,
-  NotebookPen, Paperclip, Pin, Play, Plus, Search, Sparkles, Square, Tag, Trash2, X, Cloud, RefreshCw, WifiOff, Mail, LockKeyhole, Users
+  NotebookPen, Paperclip, Pin, Play, Plus, Search, Square, Tag, Trash2, X, Cloud, RefreshCw, WifiOff, Mail, LockKeyhole, Users
 } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useDaymarkCloud } from './hooks/useDaymarkCloud';
@@ -96,13 +96,26 @@ function parseCapture(text) {
 
 export default function App(){
   const auth = useDaymarkAuth();
+  const [passwordReadyUser, setPasswordReadyUser] = useState(null);
   if (auth.authLoading) return <AppLoading/>;
   if (!auth.configured) return <ConfigError/>;
-  if (!auth.session) return <AuthScreen signIn={auth.signIn} signUp={auth.signUp}/>;
-  return <Workspace key={auth.session.user.id} auth={auth}/>;
+  if (!auth.session) return <AuthScreen signIn={auth.signIn} signUp={auth.signUp} requestPasswordReset={auth.requestPasswordReset}/>;
+  const url = new URL(window.location.href);
+  const metadata = auth.session.user.user_metadata || {};
+  const forcedSetup = url.searchParams.get('daymark_setup') === '1' || url.searchParams.get('daymark_password_reset') === '1';
+  const invitedWithoutPassword = metadata.daymark_invitation === true && metadata.daymark_password_created !== true;
+  const passwordSetupRequired = forcedSetup || (invitedWithoutPassword && passwordReadyUser !== auth.session.user.id);
+  const finishPasswordSetup = () => {
+    setPasswordReadyUser(auth.session.user.id);
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.delete('daymark_setup');
+    currentUrl.searchParams.delete('daymark_password_reset');
+    window.history.replaceState({}, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+  };
+  return <Workspace key={auth.session.user.id} auth={auth} passwordSetupRequired={passwordSetupRequired} onPasswordSetupComplete={finishPasswordSetup}/>;
 }
 
-function Workspace({auth}){
+function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
   useState(() => { migrateAccountCache(localStorage, auth.session.user.id, initialTasks, initialNotes); });
   const [tasks,setTasks] = useLocalStorage(`daymark.${auth.session.user.id}.tasks.v1`, initialTasks);
   const [notes,setNotes] = useLocalStorage(`daymark.${auth.session.user.id}.notes.v1`, initialNotes);
@@ -123,6 +136,11 @@ function Workspace({auth}){
   const [assignedDetail, setAssignedDetail] = useState(null);
   const [accountSettings, setAccountSettings] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [pendingInviteToken, setPendingInviteToken] = useState(() => {
+    const urlToken = new URL(window.location.href).searchParams.get('daymark_invite');
+    if (urlToken) localStorage.setItem('daymark.pending-email-invite.v1', urlToken);
+    return urlToken || localStorage.getItem('daymark.pending-email-invite.v1') || '';
+  });
   const claimStarted = useRef(false);
   const ownProfile = collaboration.profiles[auth.session.user.id];
   const displayName = accountDisplayName(ownProfile, auth.session.user);
@@ -137,17 +155,19 @@ function Workspace({auth}){
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    const token = url.searchParams.get('daymark_invite');
+    const token = pendingInviteToken;
     if (!token || claimStarted.current) return;
     claimStarted.current = true;
     collaboration.act('claimEmailInvite', token).then(result => {
       setTab(result?.task_id ? 'assigned' : 'contacts');
       setNotice({ tone: 'success', text: result?.task_id ? 'Invitation claimed. The task is ready for you to accept or decline.' : 'Invitation claimed. You are now connected on Daymark.' });
     }).catch(error => setNotice({ tone: 'error', text: error.message || 'This invitation could not be claimed.' })).finally(() => {
+      localStorage.removeItem('daymark.pending-email-invite.v1');
+      setPendingInviteToken('');
       url.searchParams.delete('daymark_invite');
       window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     });
-  }, [collaboration.act]);
+  }, [collaboration.act, pendingInviteToken]);
 
 
   useEffect(()=>{
@@ -324,6 +344,7 @@ function Workspace({auth}){
        composerMode==='note' ? <NoteEditor key="new-note" note={null} onSave={saveNote} onDelete={deleteNote} onClose={()=>setComposer(false)}/> :
        <QuickComposer quickText={quickText} setQuickText={setQuickText} addQuick={addQuick} onClose={()=>setComposer(false)} openTask={(defaults={})=>{setTaskDefaults(defaults);setComposerMode('task')}} openNote={()=>setComposerMode('note')}/>} 
     </div>}
+    {passwordSetupRequired && <PasswordSetupGate email={auth.session.user.email} updatePassword={auth.updatePassword} onComplete={onPasswordSetupComplete}/>} 
   </div>
 }
 
@@ -407,18 +428,18 @@ function EmptyCard({title,text}){return <div className="empty-card"><Pin/><stron
 
 function QuickComposer({quickText,setQuickText,addQuick,onClose,openTask,openNote}){
   const parsed=parseCapture(quickText);
-  const [kind,setKind]=useState('auto');
+  const [kind,setKind]=useState('task');
   const [date,setDate]=useState(parsed.date||'');
   const [time,setTime]=useState(parsed.time||'');
-  const effectiveKind=kind==='auto'?parsed.kind:kind;
-  useEffect(()=>{if(kind==='auto'){if(parsed.date&&!date)setDate(parsed.date);if(parsed.time&&!time)setTime(parsed.time)}},[parsed.date,parsed.time,kind]);
-  const save=()=>addQuick({kind:effectiveKind,date:effectiveKind==='task'?date:'',time:effectiveKind==='task'?time:''});
+  const CaptureIcon=kind==='task'?ListTodo:FileText;
+  useEffect(()=>{if(parsed.date&&!date)setDate(parsed.date);if(parsed.time&&!time)setTime(parsed.time)},[parsed.date,parsed.time,date,time]);
+  const save=()=>addQuick({kind,date:kind==='task'?date:'',time:kind==='task'?time:''});
   return <div className="modal quick-modal"><div className="modal-head"><div><span className="eyebrow">QUICK CAPTURE</span><h2>What do you want to remember?</h2></div><button className="icon" onClick={onClose}><X/></button></div>
-    <div className="capture-kind" role="group" aria-label="Capture type"><button className={kind==='auto'?'active':''} onClick={()=>setKind('auto')}><Sparkles size={15}/> Auto</button><button className={kind==='task'?'active':''} onClick={()=>setKind('task')}><ListTodo size={15}/> Task</button><button className={kind==='note'?'active':''} onClick={()=>setKind('note')}><FileText size={15}/> Note</button></div>
+    <div className="capture-kind" role="group" aria-label="Capture type"><button className={kind==='task'?'active':''} onClick={()=>setKind('task')}><ListTodo size={15}/> Task</button><button className={kind==='note'?'active':''} onClick={()=>setKind('note')}><FileText size={15}/> Note</button></div>
     <textarea autoFocus value={quickText} onChange={e=>setQuickText(e.target.value)} onKeyDown={e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')save()}} placeholder="Try: Call Nana tomorrow at 10am\nOr: Remember that the car uses 5W-30 oil"/>
-    {effectiveKind==='task'&&<div className="quick-schedule"><div className="quick-schedule-head"><CalendarDays size={16}/><strong>Schedule</strong><span>Optional</span></div><div className="quick-schedule-controls"><button type="button" className={date===isoToday()?'active':''} onClick={()=>setDate(isoToday())}>Today</button><button type="button" className={date===addDaysISO(1)?'active':''} onClick={()=>setDate(addDaysISO(1))}>Tomorrow</button><label><span>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label><span>Time</span><input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label>{(date||time)&&<button type="button" className="text-btn clear-schedule" onClick={()=>{setDate('');setTime('')}}>Clear</button>}</div></div>}
-    {quickText&&<div className="capture-preview"><Sparkles size={16}/><span>Saving as a <strong>{effectiveKind}</strong>{effectiveKind==='task'&&date?` for ${formatDate(date)}`:''}{effectiveKind==='task'&&time?` at ${time}`:''}.</span></div>}
-    <div className="modal-foot"><div className="mode-links"><button onClick={()=>openTask({title:parsed.title,date,time,list:taskListForDate(date)})}><ListTodo size={16}/> Detailed task</button><button onClick={openNote}><FileText size={16}/> Detailed note</button></div><button className="primary" onClick={save} disabled={!quickText.trim()}>Save {effectiveKind}</button></div></div>
+    {kind==='task'&&<div className="quick-schedule"><div className="quick-schedule-head"><CalendarDays size={16}/><strong>Schedule</strong><span>Optional</span></div><div className="quick-schedule-controls"><button type="button" className={date===isoToday()?'active':''} onClick={()=>setDate(isoToday())}>Today</button><button type="button" className={date===addDaysISO(1)?'active':''} onClick={()=>setDate(addDaysISO(1))}>Tomorrow</button><label><span>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label><span>Time</span><input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label>{(date||time)&&<button type="button" className="text-btn clear-schedule" onClick={()=>{setDate('');setTime('')}}>Clear</button>}</div></div>}
+    {quickText&&<div className="capture-preview"><CaptureIcon size={16}/><span>Saving as a <strong>{kind}</strong>{kind==='task'&&date?` for ${formatDate(date)}`:''}{kind==='task'&&time?` at ${time}`:''}.</span></div>}
+    <div className="modal-foot"><div className="mode-links"><button onClick={()=>openTask({title:parsed.title,date,time,list:taskListForDate(date)})}><ListTodo size={16}/> Detailed task</button><button onClick={openNote}><FileText size={16}/> Detailed note</button></div><button className="primary" onClick={save} disabled={!quickText.trim()}>Save {kind}</button></div></div>
 }
 
 function TaskEditor({task,defaults={},onSave,onClose,collaboration}){
@@ -582,12 +603,19 @@ function AppLoading(){return <div className="auth-shell"><div className="auth-ca
 
 function ConfigError(){return <div className="auth-shell"><div className="auth-card"><div className="brand-mark large"><CheckCircle2 size={28}/></div><h1>Daymark needs its cloud connection</h1><p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to the environment, then restart Daymark.</p></div></div>}
 
-function AuthScreen({signIn,signUp}){
+function AuthScreen({signIn,signUp,requestPasswordReset}){
   const [mode,setMode]=useState('signin');
   const [name,setName]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState('');
   const [busy,setBusy]=useState(false); const [error,setError]=useState(''); const [message,setMessage]=useState('');
   const submit=async e=>{e.preventDefault();setBusy(true);setError('');setMessage('');try{const result=mode==='signin'?await signIn(email.trim(),password):await signUp(email.trim(),password,name);const {data,error}=result;if(error)throw error;if(mode==='signup'&&!data?.session)setMessage('Account created. Check your email to confirm your address, then sign in.');}catch(err){setError(err?.message||'Could not continue. Please try again.');}finally{setBusy(false)}};
-  return <div className="auth-shell"><div className="auth-panel"><div className="auth-brand"><div className="brand-mark large"><CheckCircle2 size={28}/></div><div><strong>Daymark</strong><span>Tasks & notes</span></div></div><div className="auth-copy"><span className="eyebrow">YOUR DAY, EVERYWHERE</span><h1>Remember what matters. Pick up where you left off.</h1><p>Sign in to keep tasks, notes and attachments synced across web, Android and iPhone while Daymark remains usable when your connection drops.</p><div className="auth-benefits"><span><Cloud size={17}/> Cross-device sync</span><span><LockKeyhole size={17}/> Private by account</span><span><WifiOff size={17}/> Offline-friendly</span></div></div></div><form className="auth-card" onSubmit={submit}><span className="eyebrow">{mode==='signin'?'WELCOME BACK':'CREATE ACCOUNT'}</span><h2>{mode==='signin'?'Sign in to Daymark':'Start using Daymark'}</h2><p>{mode==='signin'?'Your local Daymark data will be safely merged into your account after sign-in.':'Use the same account on every device.'}</p>{mode==='signup'&&<label>Full name<div className="input-with-icon"><Users size={17}/><input type="text" autoComplete="name" required minLength={2} maxLength={80} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/></div></label>}<label>Email<div className="input-with-icon"><Mail size={17}/><input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></div></label><label>Password<div className="input-with-icon"><LockKeyhole size={17}/><input type="password" autoComplete={mode==='signin'?'current-password':'new-password'} required minLength={8} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters"/></div></label>{error&&<div className="inline-error">{error}</div>}{message&&<div className="inline-success">{message}</div>}<button className="primary auth-submit" disabled={busy}>{busy?<><RefreshCw className="spin" size={17}/> Please wait…</>:mode==='signin'?'Sign in':'Create account'}</button><button type="button" className="auth-switch" onClick={()=>{setMode(mode==='signin'?'signup':'signin');setError('');setMessage('')}}>{mode==='signin'?'New to Daymark? Create an account':'Already have an account? Sign in'}</button></form></div>
+  const resetPassword=async()=>{setBusy(true);setError('');setMessage('');try{await requestPasswordReset(email);setMessage('Check your email for a secure link to set your Daymark password.');}catch(err){setError(err?.message||'Could not send the password email.');}finally{setBusy(false)}};
+  return <div className="auth-shell"><div className="auth-panel"><div className="auth-brand"><div className="brand-mark large"><CheckCircle2 size={28}/></div><div><strong>Daymark</strong><span>Tasks & notes</span></div></div><div className="auth-copy"><span className="eyebrow">YOUR DAY, EVERYWHERE</span><h1>Remember what matters. Pick up where you left off.</h1><p>Sign in to keep tasks, notes and attachments synced across web, Android and iPhone while Daymark remains usable when your connection drops.</p><div className="auth-benefits"><span><Cloud size={17}/> Cross-device sync</span><span><LockKeyhole size={17}/> Private by account</span><span><WifiOff size={17}/> Offline-friendly</span></div></div></div><form className="auth-card" onSubmit={submit}><span className="eyebrow">{mode==='signin'?'WELCOME BACK':'CREATE ACCOUNT'}</span><h2>{mode==='signin'?'Sign in to Daymark':'Start using Daymark'}</h2><p>{mode==='signin'?'Your local Daymark data will be safely merged into your account after sign-in.':'Use the same account on every device.'}</p>{mode==='signup'&&<label>Full name<div className="input-with-icon"><Users size={17}/><input type="text" autoComplete="name" required minLength={2} maxLength={80} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/></div></label>}<label>Email<div className="input-with-icon"><Mail size={17}/><input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></div></label><label>Password<div className="input-with-icon"><LockKeyhole size={17}/><input type="password" autoComplete={mode==='signin'?'current-password':'new-password'} required minLength={8} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters"/></div></label>{error&&<div className="inline-error">{error}</div>}{message&&<div className="inline-success">{message}</div>}<button className="primary auth-submit" disabled={busy}>{busy?<><RefreshCw className="spin" size={17}/> Please wait…</>:mode==='signin'?'Sign in':'Create account'}</button>{mode==='signin'&&<button type="button" className="auth-switch" disabled={busy} onClick={resetPassword}>Forgot or never created a password?</button>}<button type="button" className="auth-switch" onClick={()=>{setMode(mode==='signin'?'signup':'signin');setError('');setMessage('')}}>{mode==='signin'?'New to Daymark? Create an account':'Already have an account? Sign in'}</button></form></div>
+}
+
+function PasswordSetupGate({email,updatePassword,onComplete}){
+  const [password,setPassword]=useState(''),[confirm,setConfirm]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const submit=async event=>{event.preventDefault();setError('');if(password.length<8){setError('Use at least 8 characters.');return;}if(password!==confirm){setError('The passwords do not match.');return;}setBusy(true);try{await updatePassword(password);onComplete();}catch(err){setError(err?.message||'Could not create your password. Try again.');}finally{setBusy(false)}};
+  return <div className="password-setup-gate"><form className="password-setup-card" role="dialog" aria-modal="true" aria-labelledby="password-setup-title" onSubmit={submit}><div className="brand-mark large"><LockKeyhole size={24}/></div><span className="eyebrow">SECURE YOUR ACCOUNT</span><h2 id="password-setup-title">Create your Daymark password</h2><p>Your invitation has been accepted. Create a password so you can return to your dashboard from any device.</p><label>Email<input type="email" value={email||''} readOnly/></label><label>New password<input autoFocus type="password" autoComplete="new-password" minLength={8} required value={password} onChange={event=>setPassword(event.target.value)} placeholder="At least 8 characters"/></label><label>Confirm password<input type="password" autoComplete="new-password" minLength={8} required value={confirm} onChange={event=>setConfirm(event.target.value)} placeholder="Enter it again"/></label>{error&&<div className="inline-error" role="alert">{error}</div>}<button className="primary" disabled={busy||password.length<8||password!==confirm}>{busy?'Creating password…':'Create password and open Daymark'}</button><small>You will use this email and password whenever you return.</small></form></div>
 }
 
 function CloudStatus({cloud}){

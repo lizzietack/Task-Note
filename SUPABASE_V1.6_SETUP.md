@@ -1,6 +1,6 @@
-# Daymark v1.6 Supabase setup
+# Daymark v1.6–v1.6.1 Supabase setup
 
-Complete these steps before pushing v1.6 to Netlify.
+Complete these steps before deploying the email-invitation release to Netlify. The v1.6.1 password-setup improvement uses the same v1.6 database migration; no additional SQL is required.
 
 ## 1. Add the database changes
 
@@ -41,11 +41,13 @@ Suggested body:
 <p>Someone has invited you to connect and collaborate on Daymark.</p>
 {{ end }}
 <p><a href="{{ .ConfirmationURL }}">Open Daymark</a></p>
-<p>This secure link signs you in with the invited email address.</p>
+<p>This secure link verifies your invited email. Daymark will then ask you to create a password for future visits.</p>
 ```
 
 Keep `{{ .ConfirmationURL }}` exactly as shown so Supabase can authenticate the recipient and return them to the invitation.
 
 ## 5. Smoke test
 
-Invite an email address that is not already registered and is outside your Supabase organization. Open the email on another phone or computer. Confirm that the link signs the recipient in, opens Assigned to me, and lets them accept or decline the task. Then verify comments, completion and owner notifications in both directions.
+Invite an email address that is not already registered and is outside your Supabase organization. Open the email on another phone or computer. Confirm that Daymark requires a new password before opening the dashboard, opens Assigned to me after password creation, and lets the recipient accept or decline the task. Close the tab, reopen Daymark, and sign in with the invited email and new password. Then verify comments, completion and owner notifications in both directions.
+
+Someone who accepted a v1.6 invitation before creating a password can recover access from the Daymark sign-in screen: enter the invited email, select **Forgot or never created a password?**, open the recovery email, and create a reusable password.

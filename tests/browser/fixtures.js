@@ -14,8 +14,9 @@ export async function setup(page, userId = ME) {
     task_comments: [], notifications: [], daymark_email_invites: [], notes: [], attachments: [], deleted_items: [],
   };
   const calls = [], channels = [];
+  const authMetadata = Object.fromEntries(db.profiles.map(person => [person.id, {}]));
   let current = userId, failAssign = false;
-  const session = uid => { const person=db.profiles.find(p => p.id === uid); return { access_token: `${btoa('{}')}.${btoa(JSON.stringify({ sub: uid, role:'authenticated', exp: 4102444800 }))}.test`, refresh_token: 'test-refresh', expires_in: 3600, expires_at: 4102444800, token_type: 'bearer', user: { id: uid, email: person.email, user_metadata:{display_name:person.display_name,avatar_url:person.avatar_url}, aud: 'authenticated', role: 'authenticated' } }; };
+  const session = uid => { const person=db.profiles.find(p => p.id === uid); return { access_token: `${btoa('{}')}.${btoa(JSON.stringify({ sub: uid, role:'authenticated', exp: 4102444800 }))}.test`, refresh_token: 'test-refresh', expires_in: 3600, expires_at: 4102444800, token_type: 'bearer', user: { id: uid, email: person.email, user_metadata:{display_name:person.display_name,avatar_url:person.avatar_url,...authMetadata[uid]}, aud: 'authenticated', role: 'authenticated' } }; };
   await page.addInitScript(({ session, userId }) => {
     localStorage.setItem('sb-daymark-test-auth-token', JSON.stringify(session));
     localStorage.setItem(`daymark.${userId}.tasks.v1`, '[]'); localStorage.setItem(`daymark.${userId}.notes.v1`, '[]');
@@ -58,6 +59,7 @@ export async function setup(page, userId = ME) {
         if(body?.email) person.email=body.email;
         if(body?.data?.display_name) person.display_name=body.data.display_name;
         if(Object.prototype.hasOwnProperty.call(body?.data||{},'avatar_url')) person.avatar_url=body.data.avatar_url;
+        if(body?.data) authMetadata[current]={...authMetadata[current],...body.data};
         return ok(session(current).user);
       }
       return ok(session(current).user);
@@ -128,5 +130,5 @@ export async function setup(page, userId = ME) {
   });
   const errors=[]; page.on('pageerror', error=>errors.push(error.message));
   await page.goto('/'); await expect(page.getByText('Collaboration connected', {exact:false})).toBeVisible();
-  return { db, calls, emit, errors, failNextAssignment: () => { failAssign=true; }, addEmailInvite: invite => db.daymark_email_invites.push({id:`incoming-${db.daymark_email_invites.length}`,status:'pending',created_at:now,expires_at:'2026-10-03T08:00:00Z',...invite}) };
+  return { db, calls, emit, errors, authMetadata, failNextAssignment: () => { failAssign=true; }, addEmailInvite: invite => db.daymark_email_invites.push({id:`incoming-${db.daymark_email_invites.length}`,status:'pending',created_at:now,expires_at:'2026-10-03T08:00:00Z',...invite}) };
 }

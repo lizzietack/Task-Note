@@ -39,7 +39,15 @@ export function useDaymarkAuth() {
   }, [session?.user?.email]);
   const updatePassword = useCallback(async password => {
     if (password.length < 8) throw new Error('Use at least 8 characters.');
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error } = await supabase.auth.updateUser({ password, data: { daymark_password_created: true } });
+    if (error) throw error;
+  }, []);
+  const requestPasswordReset = useCallback(async email => {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) throw new Error('Enter your email address first.');
+    const redirect = new URL(window.location.origin);
+    redirect.searchParams.set('daymark_password_reset', '1');
+    const { error } = await supabase.auth.resetPasswordForEmail(normalized, { redirectTo: redirect.toString() });
     if (error) throw error;
   }, []);
   const updateAvatar = useCallback(async file => {
@@ -67,5 +75,5 @@ export function useDaymarkAuth() {
     const { error: authError } = await supabase.auth.updateUser({ data: { avatar_url: null } });
     if (authError) throw authError;
   }, [session?.user?.id]);
-  return { session, authLoading, configured: isSupabaseConfigured, signIn, signUp, signOut, updateDisplayName, updateEmail, updatePassword, updateAvatar, removeAvatar };
+  return { session, authLoading, configured: isSupabaseConfigured, signIn, signUp, signOut, updateDisplayName, updateEmail, updatePassword, requestPasswordReset, updateAvatar, removeAvatar };
 }

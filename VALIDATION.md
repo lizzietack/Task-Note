@@ -1,9 +1,9 @@
-# v1.6 validation — 19 September 2026
+# v1.6.1 validation — 19 September 2026
 
 ## Passed
 
 - `npm test`: 10 tests. Role/status permissions, comment eligibility and validation, accepted contacts, exact installed RPC contracts, secure magic-link invitation routing, error propagation, notification recipient scoping, pagination and per-account legacy-cache migration.
-- `npm run test:browser`: 16 tests in headless Microsoft Edge. Existing Supabase client runs against mocked Auth, REST, Storage and WebSocket responses; no live database writes.
+- `npm run test:browser`: all 18 browser scenarios passed in headless Microsoft Edge across the complete run and focused rerun of a corrected test selector. Existing Supabase client runs against mocked Auth, REST, Storage and WebSocket responses; no live database writes.
   - Invite an existing account in-app, email an unregistered address, accept/decline contacts and restrict assignment choices.
   - Save/assign a task; recover from assignment failure without duplicating the saved task.
   - Assignee accept/comment/complete with no owner editing and no shared-task personal-cache writes.
@@ -18,10 +18,13 @@
   - WCAG AA contrast checks for dark-mode colored note titles and body text.
   - Existing-user contact requests and unregistered-user email invitations.
   - Task invitations tied to an email, secure claim on sign-in, and resulting pending assignment.
+  - New invitees must create a reusable password before the dashboard opens; the session and assigned task remain available after a full page reload.
+  - Earlier magic-link invitees can request a password-setup email from the sign-in screen.
+  - Quick Capture exposes explicit Task and Note choices with Auto removed.
   - Optional profile-photo upload and display.
   - Mobile outside-tap navigation closing and the replacement Today/Capture icons.
 - `npm run build`: successful Vite production build and PWA service-worker generation.
-- Mobile task editor, Profile & settings and dark colored-note screenshots visually inspected.
+- Mobile task editor, Profile & settings, invite-password setup and dark colored-note screenshots visually inspected.
 - Supplied environment checked locally: only Supabase URL and a verified public key. No service-role key used.
 
 ## Not exercised against the live project

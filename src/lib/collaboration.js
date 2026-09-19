@@ -35,12 +35,13 @@ export function collaborationApi(client, userId) {
     if (!invitation?.invite_token || !invitation?.invite_id) throw new Error('Daymark could not create the secure invitation.');
     const redirect = new URL(window.location.origin);
     redirect.searchParams.set('daymark_invite', invitation.invite_token);
+    redirect.searchParams.set('daymark_setup', '1');
     const { error } = await client.auth.signInWithOtp({
       email: normalized,
       options: {
         shouldCreateUser: true,
         emailRedirectTo: redirect.toString(),
-        data: { daymark_invitation: true, task_title: taskTitle || undefined },
+        data: { daymark_invitation: true, daymark_password_created: false, task_title: taskTitle || undefined },
       },
     });
     if (error) {

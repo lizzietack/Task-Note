@@ -1,8 +1,15 @@
-# Daymark — Tasks & Notes v1.6
+# Daymark — Tasks & Notes v1.6.1
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
 ## What's new
+
+### v1.6.1 durable invited accounts
+
+- A person joining from an email invitation must create an eight-character-or-longer password before the Daymark dashboard becomes available.
+- The invitation is claimed securely while password setup is displayed, so closing the tab does not detach the assigned task from the new account.
+- The sign-in screen includes **Forgot or never created a password?** for recipients who joined through an earlier invitation and need permanent access to their account.
+- Quick Capture now uses explicit **Task** and **Note** choices. The unused Auto option and sparkle icon have been removed.
 
 ### v1.6 open invitations and personal profiles
 

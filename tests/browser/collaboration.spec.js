@@ -68,6 +68,49 @@ test('recipient claims an emailed task and can accept or decline it in real time
   expect(state.errors).toEqual([]);
 });
 
+test('a new invited user must create a reusable password before opening Daymark', async ({ page }) => {
+  const state = await setup(page);
+  state.db.task_assignments = [];
+  state.addEmailInvite({inviter_id:OTHER,invitee_email:'raphael@example.com',task_id:'shared-task',mock_token:'new-user-token'});
+  await page.evaluate(() => {
+    const key='sb-daymark-test-auth-token';
+    const saved=JSON.parse(localStorage.getItem(key));
+    saved.user.user_metadata={...saved.user.user_metadata,daymark_invitation:true,daymark_password_created:false};
+    localStorage.setItem(key,JSON.stringify(saved));
+  });
+  await page.goto('/?daymark_invite=new-user-token&daymark_setup=1');
+  const setupDialog=page.getByRole('dialog',{name:'Create your Daymark password'});
+  await expect(setupDialog).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:'test-results/mobile-invite-password-setup.png',animations:'disabled'});
+  await expect.poll(()=>state.db.daymark_email_invites.find(invite=>invite.mock_token==='new-user-token')?.status).toBe('claimed');
+  await setupDialog.getByLabel('New password').fill('return-to-daymark-123');
+  await setupDialog.getByLabel('Confirm password').fill('return-to-daymark-123');
+  await setupDialog.getByRole('button',{name:'Create password and open Daymark'}).click();
+  await expect(setupDialog).toHaveCount(0);
+  await expect(page).toHaveURL(/^(?!.*daymark_(invite|setup))/);
+  expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.password==='return-to-daymark-123'&&call.body?.data?.daymark_password_created===true)).toBe(true);
+  await page.reload();
+  await expect(page.getByRole('dialog',{name:'Create your Daymark password'})).toHaveCount(0);
+  await page.locator('button.menu').click();
+  await page.getByRole('button',{name:'Assigned to me',exact:false}).click();
+  await expect(page.getByRole('button',{name:'Send payment receipt',exact:true})).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test('an earlier invitee can request a password link from the sign-in screen', async ({ page }) => {
+  const state = await setup(page);
+  await page.locator('.sidebar-profile').click();
+  await page.getByRole('button',{name:'Sign out of Daymark'}).click();
+  await page.getByLabel('Email').fill('raphael@example.com');
+  await page.getByRole('button',{name:'Forgot or never created a password?'}).click();
+  await expect(page.getByText('Check your email for a secure link',{exact:false})).toBeVisible();
+  const recovery=state.calls.find(call=>call.path.endsWith('/auth/v1/recover'));
+  expect(recovery?.body?.email).toBe('raphael@example.com');
+  expect(decodeURIComponent(recovery?.query||'')).toContain('daymark_password_reset=1');
+  expect(state.errors).toEqual([]);
+});
+
 test('assignee can accept, comment, complete; no owner edits or personal-cache writes', async ({ page }) => {
   const state = await setup(page);
   await page.getByRole('button',{name:'Assigned to me',exact:false}).click();
@@ -124,6 +167,8 @@ test('v1.4 task editing, recurrence, note capture, search and account separation
   await page.locator('.task-row').filter({hasText:'Review supplier payment'}).locator('button.check').click();
   await expect.poll(()=>page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.${uid}.tasks.v1`)).filter(t=>t.title==='Review supplier payment').length,ME)).toBe(2);
   await page.getByRole('button',{name:'Add',exact:true}).first().click();
+  await expect(page.getByRole('button',{name:'Auto',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Note',exact:true}).click();
   await page.getByPlaceholder(/^Try: Call Nana/).fill('Remember the meeting room code');
   await page.getByRole('button',{name:'Save note',exact:true}).click();
   await page.getByRole('button',{name:'Notes',exact:true}).click();
@@ -154,6 +199,7 @@ test('mobile layout and offline collaboration preserve personal editing', async 
   await expect(page.getByRole('button',{name:'Accept task'})).toBeDisabled();
   await expect(page.getByText('Offline — collaboration will refresh',{exact:false})).toBeVisible();
   await page.locator('button.fab').click();
+  await page.getByRole('button',{name:'Note',exact:true}).click();
   await page.getByPlaceholder(/^Try: Call Nana/).fill('Remember an offline note');
   await page.getByRole('button',{name:'Save note',exact:true}).click();
   expect(await page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.${uid}.notes.v1`)).some(n=>n.title==='an offline note'),ME)).toBe(true);
@@ -258,7 +304,7 @@ test('mobile navigation uses purposeful icons and closes when the user taps outs
   expect(await todayIcon.getAttribute('class')).toContain('calendar-check');
   expect(await captureIcon.getAttribute('class')).toContain('notebook-pen');
   await page.screenshot({path:'test-results/mobile-sidebar-v16.png',animations:'disabled'});
-  await page.getByRole('button',{name:'Close navigation'}).click({position:{x:370,y:400}});
+  await page.getByRole('button',{name:'Close navigation',exact:true}).click({position:{x:370,y:400}});
   await expect(page.locator('.sidebar')).not.toHaveClass(/open/);
   expect(state.errors).toEqual([]);
 });

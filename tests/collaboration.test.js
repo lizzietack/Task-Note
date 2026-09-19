@@ -65,6 +65,8 @@ test('unknown emails receive a secure Supabase magic-link invitation without a s
     assert.equal(otp[0].email,'new.person@example.com');
     assert.equal(otp[0].options.shouldCreateUser,true);
     assert.match(otp[0].options.emailRedirectTo,/daymark_invite=secure-token/);
+    assert.match(otp[0].options.emailRedirectTo,/daymark_setup=1/);
+    assert.equal(otp[0].options.data.daymark_password_created,false);
     assert.deepEqual(calls[1],{name:'daymark_create_email_invite',args:{invitee_email:'new.person@example.com',target_task:null}});
   } finally { globalThis.window = previousWindow; }
 });
