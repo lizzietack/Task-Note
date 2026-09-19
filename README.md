@@ -104,7 +104,7 @@ npm run build
 npm run dev
 ```
 
-For Netlify, replace project files, retain your environment variables and deploy with build command `npm run build` and publish directory `dist`. The source ZIP excludes dependencies, Git history and old builds.
+For Vercel, import the GitHub repository, retain `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, and deploy the `main` branch. Vercel detects Vite; the committed `vercel.json` sets the production build, `dist` output, SPA fallback and PWA cache headers. Follow `VERCEL_MIGRATION.md` for the custom-domain and Supabase Auth cutover.
 
 Run `npm run test:browser` for mocked Auth/REST/Realtime browser tests. These never change your live project. The suite defaults to installed Microsoft Edge; set `PLAYWRIGHT_CHANNEL=chrome` for Chrome, or `PLAYWRIGHT_CHANNEL=chromium` after `npx playwright install chromium`.
 
