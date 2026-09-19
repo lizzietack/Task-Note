@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, Check, Trash2, X } from 'lucide-react';
+import { Camera, Check, Download, Trash2, X } from 'lucide-react';
 
 function friendlyEmailName(email = '') {
   return email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) || 'Daymark user';
@@ -27,7 +27,7 @@ export function ThemeSwitch({ dark, setDark, compact = false }) {
   </button>;
 }
 
-export function AccountSettings({ auth, collaboration, profile, dark, setDark, onSaved, onClose }) {
+export function AccountSettings({ auth, collaboration, profile, dark, setDark, onExport, onSaved, onClose }) {
   const dialogRef = useRef(null);
   const photoRef = useRef(null);
   const [name, setName] = useState(() => accountDisplayName(profile, auth.session.user));
@@ -99,7 +99,11 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
             if (preferences.browser_notifications && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
             await collaboration.act('savePreferences', preferences);
           }, 'Your notification preferences have been saved.')}>{busy === 'notifications' ? 'Saving…' : 'Save notification preferences'}</button>
-          <small className="field-help">Email copies start after the optional v1.7 notification worker is configured.</small>
+          <small className="field-help">Email copies start after the optional notification worker is configured.</small>
+        </SettingsSection>
+        <SettingsSection title="Your data" description="Download a readable copy of the information stored in your Daymark account.">
+          <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => run('export', onExport, 'Your Daymark export has been downloaded.')}><Download size={16}/>{busy === 'export' ? 'Preparing export…' : 'Download my data'}</button>
+          <small className="field-help">The JSON export includes tasks, notes and collaboration records. Attachment details are included, but the files themselves remain in secure storage.</small>
         </SettingsSection>
         <SettingsSection title="Appearance" description="Use the theme that feels most comfortable."><ThemeSwitch dark={dark} setDark={setDark}/></SettingsSection>
         <section className="settings-signout"><div><h3>Sign out</h3><p>Your synced data remains available when you sign in again.</p></div><button type="button" className="signout-button" disabled={Boolean(busy)} onClick={() => run('signout', auth.signOut, 'Signed out.')}>Sign out of Daymark</button></section>

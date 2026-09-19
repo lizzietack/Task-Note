@@ -10,8 +10,8 @@ export async function setup(page, userId = ME) {
     profiles: [{ id: ME, display_name: 'Raphael', email: 'raphael@example.com', avatar_url: null, timezone:'Africa/Accra' }, { id: OTHER, display_name: 'Herbert', email: 'herbert@example.com', avatar_url: null, timezone:'Africa/Accra' }, { id: THIRD, display_name: 'Nana', email: 'nana@example.com', avatar_url: null, timezone:'Africa/Accra' }],
     connections: [{ id: 'c1', requester_id: ME, addressee_id: OTHER, status: 'accepted', created_at: now }, { id: 'c2', requester_id: THIRD, addressee_id: ME, status: 'pending', created_at: now }],
     tasks: [task('owned-task', ME, 'Review supplier payment'), task('shared-task', OTHER, 'Send payment receipt')],
-    task_assignments: [{ id: 'a1', task_id: 'shared-task', owner_id: OTHER, assignee_id: ME, status: 'pending', assigned_at: now }],
-    task_comments: [], task_activity: [{id:'activity-1',task_id:'shared-task',owner_id:OTHER,actor_id:OTHER,assignment_id:'a1',event_type:'assigned',created_at:now}], notifications: [], notification_deliveries: [], notification_preferences: [{ user_id:ME, contact_updates:true, assignment_updates:true, comment_updates:true, task_reminders:true, browser_notifications:true, email_notifications:false, updated_at:now }], daymark_email_invites: [], notes: [], attachments: [], deleted_items: [],
+    task_assignments: [{ id: 'a1', task_id: 'shared-task', owner_id: OTHER, assignee_id: ME, status: 'pending', assigned_at: now }, { id: 'a2', task_id: 'owned-task', owner_id: ME, assignee_id: OTHER, status: 'accepted', assigned_at: now, responded_at: now }],
+    task_comments: [], task_activity: [{id:'activity-1',task_id:'shared-task',owner_id:OTHER,actor_id:OTHER,assignment_id:'a1',event_type:'assigned',created_at:now},{id:'activity-2',task_id:'owned-task',owner_id:ME,actor_id:ME,assignment_id:'a2',event_type:'assigned',created_at:now},{id:'activity-3',task_id:'owned-task',owner_id:ME,actor_id:OTHER,assignment_id:'a2',event_type:'accepted',created_at:now}], notifications: [], notification_deliveries: [], notification_preferences: [{ user_id:ME, contact_updates:true, assignment_updates:true, comment_updates:true, task_reminders:true, browser_notifications:true, email_notifications:false, updated_at:now }], daymark_email_invites: [], notes: [], attachments: [], deleted_items: [],
   };
   const calls = [], channels = [];
   const authMetadata = Object.fromEntries(db.profiles.map(person => [person.id, {}]));
@@ -66,12 +66,14 @@ export async function setup(page, userId = ME) {
     }
     if (url.pathname.includes('/rpc/')) {
       const name = url.pathname.split('/').at(-1);
-      if (name === 'daymark_invite_contact') {
+      if (name === 'daymark_invite_or_reconnect_contact') {
         const person = db.profiles.find(p => p.email === body.invitee_email);
         if (!person) return bad('No Daymark user found with that email');
         if (person.id === current) return bad('You cannot add yourself');
-        if (db.connections.some(c => [c.requester_id,c.addressee_id].includes(current) && [c.requester_id,c.addressee_id].includes(person.id))) return bad('A Daymark contact relationship already exists');
-        db.connections.push({ id:'new-c', requester_id:current, addressee_id:person.id, status:'pending' }); return ok('new-c');
+        const existing=db.connections.find(c => [c.requester_id,c.addressee_id].includes(current) && [c.requester_id,c.addressee_id].includes(person.id));
+        if(existing&&['pending','accepted'].includes(existing.status))return bad(existing.status==='accepted'?'You are already Daymark contacts':'A Daymark contact request is already pending');
+        if(existing){Object.assign(existing,{requester_id:current,addressee_id:person.id,status:'pending',responded_at:null,updated_at:now});return ok(existing.id);}
+        db.connections.push({ id:'new-c', requester_id:current, addressee_id:person.id, status:'pending',updated_at:now }); return ok('new-c');
       }
       if (name === 'daymark_create_email_invite') {
         const existing=db.daymark_email_invites.find(i=>i.inviter_id===current&&i.invitee_email===body.invitee_email&&i.task_id===body.target_task&&i.status==='pending');
@@ -113,11 +115,34 @@ export async function setup(page, userId = ME) {
         }
         return ok({status:a.status});
       }
+      if (name === 'daymark_cancel_assignment') {
+        const a=db.task_assignments.find(a=>a.id===body.target_assignment&&a.owner_id===current);
+        if(!a)return bad('Assignment not found');
+        if(a.status==='cancelled')return ok({status:'cancelled',replayed:true});
+        if(!['pending','accepted'].includes(a.status))return bad('This assignment can no longer be cancelled');
+        a.status='cancelled'; a.updated_at=now;
+        db.task_activity.push({id:`activity-${db.task_activity.length+1}`,task_id:a.task_id,owner_id:a.owner_id,actor_id:current,assignment_id:a.id,event_type:'cancelled',created_at:now});
+        db.notifications.push({id:`notification-${db.notifications.length+1}`,user_id:a.assignee_id,actor_id:current,type:'assignment_cancelled',title:'Assignment cancelled',message:'A shared task was cancelled.',task_id:a.task_id,assignment_id:a.id,created_at:now,read_at:null});
+        return ok({status:'cancelled',replayed:false});
+      }
+      if (name === 'daymark_close_connection') {
+        const connection=db.connections.find(c=>c.id===body.target_connection&&[c.requester_id,c.addressee_id].includes(current));
+        if(!connection)return bad('Contact relationship not found');
+        if(connection.status==='cancelled')return ok({status:'cancelled',assignments_cancelled:0,replayed:true});
+        if(connection.status==='pending'&&connection.requester_id!==current)return bad('Only the sender can cancel this request');
+        if(!['pending','accepted'].includes(connection.status))return bad('This contact relationship is already closed');
+        const previous=connection.status,other=connection.requester_id===current?connection.addressee_id:connection.requester_id;
+        connection.status='cancelled'; connection.updated_at=now;
+        let count=0;
+        if(previous==='accepted')for(const a of db.task_assignments){if(['pending','accepted'].includes(a.status)&&((a.owner_id===current&&a.assignee_id===other)||(a.owner_id===other&&a.assignee_id===current))){a.status='cancelled';a.updated_at=now;count+=1;db.task_activity.push({id:`activity-${db.task_activity.length+1}`,task_id:a.task_id,owner_id:a.owner_id,actor_id:current,assignment_id:a.id,event_type:'cancelled',created_at:now});}}
+        return ok({status:'cancelled',assignments_cancelled:count,replayed:false});
+      }
       if (name === 'daymark_respond_contact') { db.connections.find(c=>c.id===body.target_connection).status=body.response; return ok(null); }
-      if (name === 'daymark_assign_task') {
+      if (name === 'daymark_assign_or_reactivate_task') {
         if (failAssign) { failAssign=false; return bad('Temporary connection problem'); }
         if (!db.tasks.some(t=>t.id===body.target_task && t.user_id===current)) return bad('Task not found or you do not own it');
-        if (db.task_assignments.some(a=>a.task_id===body.target_task && a.assignee_id===body.target_user)) return bad('Assignment already exists');
+        const existing=db.task_assignments.find(a=>a.task_id===body.target_task&&a.assignee_id===body.target_user);
+        if(existing){if(['pending','accepted'].includes(existing.status))return bad('This assignment is already active');Object.assign(existing,{status:'pending',assigned_at:now,responded_at:null,completed_at:null,updated_at:now});return ok(existing.id);}
         db.task_assignments.push({id:'new-a',task_id:body.target_task,owner_id:current,assignee_id:body.target_user,status:'pending',assigned_at:now}); return ok('new-a');
       }
       if (name === 'daymark_respond_assignment' || name === 'daymark_complete_assignment') {
@@ -129,10 +154,12 @@ export async function setup(page, userId = ME) {
     const table = url.pathname.split('/').at(-1);
     if (!(table in db)) return ok({ message:'Unknown table' }, 404);
     let rows = db[table];
+    if (table === 'profiles') rows=rows.filter(profile=>profile.id===current||db.connections.some(connection=>['pending','accepted'].includes(connection.status)&&[connection.requester_id,connection.addressee_id].includes(current)&&[connection.requester_id,connection.addressee_id].includes(profile.id)));
     if (table === 'tasks') rows = rows.filter(t => t.user_id === current || db.task_assignments.some(a => a.task_id === t.id && a.assignee_id === current && ['pending','accepted','completed'].includes(a.status)));
     if (table === 'notes') rows = rows.filter(n=>n.user_id===current);
     if (table === 'task_assignments') rows=rows.filter(a=>a.owner_id===current||a.assignee_id===current);
     if (table === 'task_activity') rows=rows.filter(activity=>activity.owner_id===current||db.task_assignments.some(a=>a.task_id===activity.task_id&&a.assignee_id===current&&['pending','accepted','completed'].includes(a.status)));
+    if (table === 'task_comments') rows=rows.filter(comment=>db.task_assignments.some(a=>a.task_id===comment.task_id&&(a.owner_id===current||(a.assignee_id===current&&['pending','accepted','completed'].includes(a.status)))));
     if (table === 'notification_preferences') rows=rows.filter(preference=>preference.user_id===current);
     if (table === 'daymark_email_invites') rows=rows.filter(invite=>invite.inviter_id===current);
     for (const [field,value] of url.searchParams) {

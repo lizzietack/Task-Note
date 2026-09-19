@@ -1,8 +1,19 @@
-# Daymark — Tasks & Notes v1.7
+# Daymark — Tasks & Notes v1.8
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
 ## What's new
+
+### v1.8 collaboration control and data ownership
+
+- **Assigned by me** gives task owners one place to review sent work by status, open the original task and cancel an active assignment.
+- Removing an accepted contact immediately cancels active assignments in both directions. The former contact loses shared-task, comment and profile access while each owner keeps their task and discussion history.
+- A cancelled or declined relationship can be reconnected through a new contact request. A completed, declined or cancelled assignment can be sent again without creating a duplicate record.
+- Contact requests that are still pending can be cancelled by their sender.
+- **Download my data** exports the signed-in user's Daymark content and collaboration history as JSON without authentication tokens or private service credentials.
+- Permission-aware controls, activity events and notifications explain assignment cancellation and contact removal to both people.
+
+Before deploying v1.8, run `DAYMARK_V1.8_COLLABORATION_CONTROLS.sql` once after the v1.7 migration and follow `SUPABASE_V1.8_SETUP.md`.
 
 ### v1.7 reliable delivery
 
@@ -56,15 +67,17 @@ Assignment completion and the owner's task checkbox remain separate. Recurring t
 
 ## Existing Supabase project
 
-**Do not rerun the v1.4 setup SQL to upgrade your installation.** Run only the additive v1.7 migration after the earlier collaboration and v1.6 migrations.
+**Do not rerun the v1.4 setup SQL to upgrade your installation.** For an existing v1.7 installation, run only the additive v1.8 migration. A new installation must apply the migrations in version order.
 
 Required: profiles (including email and avatar_url), text task IDs, connections, task_assignments, task_comments, notifications, daymark_email_invites, and the existing v1.4 tables/storage bucket. The client calls these exact functions:
 
 | Function | Arguments |
 | --- | --- |
-| daymark_invite_contact | invitee_email |
+| daymark_invite_or_reconnect_contact | invitee_email |
 | daymark_respond_contact | target_connection, response |
-| daymark_assign_task | target_task (text), target_user |
+| daymark_close_connection | target_connection |
+| daymark_assign_or_reactivate_task | target_task (text), target_user |
+| daymark_cancel_assignment | target_assignment |
 | daymark_respond_assignment | target_assignment, response |
 | daymark_complete_assignment | target_assignment |
 | daymark_create_email_invite | invitee_email, target_task |
@@ -76,7 +89,7 @@ Required: profiles (including email and avatar_url), text task IDs, connections,
 | daymark_claim_notification_deliveries | worker_secret, batch_limit |
 | daymark_finish_notification_delivery | worker_secret, delivery result fields |
 
-Contact and assignment notifications come from the installed functions. v1.7 adds comment/task-update triggers, notification preferences and an email-delivery queue. Email invitation links are sent by Supabase Auth with `signInWithOtp`; the frontend contains only the publishable key. Each signed-in user updates only their own profile email and timezone.
+Contact and assignment notifications come from the installed functions. v1.8 adds owner cancellation, safe contact removal, reconnection and assignment reactivation. v1.7 provides comment/task-update triggers, notification preferences and an email-delivery queue. Email invitation links are sent by Supabase Auth with `signInWithOtp`; the frontend contains only the publishable key. Each signed-in user updates only their own profile email and timezone.
 
 Retain the supplied public `.env` connection, or configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env.example`. No service-role key is used; secret/service-role keys are rejected by the frontend. Realtime requires the collaboration tables in your existing `supabase_realtime` publication. See [Supabase documentation](https://supabase.com/docs/guides/realtime/postgres-changes).
 
@@ -99,4 +112,4 @@ The first account used after upgrade claims the old v1.4 device cache once; othe
 
 ## Validation boundary
 
-See `VALIDATION.md`. No live credentials were supplied: actual RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, invite/accept, assign, queue an offline response/comment, reconnect, and check the Activity timeline and notifications. Browser notifications require Daymark to be running; closed-app email delivery requires the optional v1.7 worker.
+See `VALIDATION.md`. No live credentials were supplied: actual RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, invite/accept, assign, cancel an assignment, remove and reconnect the contact, and verify revoked access. Browser notifications require Daymark to be running; closed-app email delivery requires the optional notification worker.

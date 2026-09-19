@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Activity, Bell, Check, MessageCircle, RefreshCw, Users, WifiOff, X } from 'lucide-react';
+import { Activity, Bell, Check, MessageCircle, RefreshCw, Send, UserMinus, Users, WifiOff, X } from 'lucide-react';
 import { assignmentActions, canComment, personName } from '../lib/collaboration';
 import { ProfileAvatar } from './AccountSettings';
 
@@ -35,6 +35,19 @@ export function ContactsView({ c }) {
   ];
   const pendingInvites = c.emailInvites.filter(invite => invite.status === 'pending' && new Date(invite.expires_at).getTime() > Date.now());
   const invitationHistory = c.emailInvites.filter(invite => !pendingInvites.includes(invite)).slice(0, 10);
+  const closeConnection = row => {
+    const accepted = row.status === 'accepted';
+    const prompt = accepted
+      ? 'Remove this contact? Active assignments between you will be cancelled and shared-task access will be revoked.'
+      : 'Cancel this contact request?';
+    if (!window.confirm(prompt)) return;
+    run(async () => {
+      const result = await c.act('closeConnection', row.id);
+      setMessage(accepted
+        ? `Contact removed. ${result?.assignments_cancelled || 0} active ${result?.assignments_cancelled === 1 ? 'assignment was' : 'assignments were'} cancelled.`
+        : 'Contact request cancelled.');
+    });
+  };
   return <>
     <div className="page-head"><div><span className="eyebrow">WORK TOGETHER</span><h1>Contacts</h1><p>Invite anyone by email, wherever they are.</p></div><Users size={28}/></div>
     <form className="collab-invite" onSubmit={e => { e.preventDefault(); run(async () => { setMessage(''); const result = await c.act('inviteAny', email); setEmail(''); setMessage(result.delivery === 'email' ? 'Invitation email sent. They can join Daymark securely from the link.' : 'Contact request sent. They can accept it in Daymark.'); }); }}>
@@ -51,6 +64,8 @@ export function ContactsView({ c }) {
       <div className="collab-list">{rows.length ? rows.map(row => { const other = row.requester_id === c.uid ? row.addressee_id : row.requester_id; const profile = c.profiles[other];
         return <div className="collab-card" key={row.id}><ProfileAvatar profile={profile} small/><div className="collab-person"><strong>{personName(profile)}</strong><small>{profile?.email}</small></div><Status status={row.status}/>
           {row.status === 'pending' && row.addressee_id === c.uid && <div className="collab-actions"><button className="primary" disabled={busy || !c.available} onClick={() => run(() => c.act('respondContact', row.id, 'accepted'))}>Accept</button><button className="secondary" disabled={busy || !c.available} onClick={() => run(() => c.act('respondContact', row.id, 'declined'))}>Decline</button></div>}
+          {row.status === 'pending' && row.requester_id === c.uid && <button className="text-btn danger-text" disabled={busy || !c.available} onClick={() => closeConnection(row)}>Cancel request</button>}
+          {row.status === 'accepted' && <button className="text-btn danger-text" disabled={busy || !c.available} onClick={() => closeConnection(row)}><UserMinus size={14}/> Remove contact</button>}
         </div>;
       }) : <p className="empty-line">{c.loading ? 'Loading…' : 'No contacts in this section yet.'}</p>}</div>
     </section>)}
@@ -58,7 +73,7 @@ export function ContactsView({ c }) {
 }
 
 export function AssignmentPicker({ c, taskId, value, onChange, inviteEmail, onInviteEmail, disabled }) {
-  const used = new Set(c.assignments.filter(a => String(a.task_id) === String(taskId)).map(a => a.assignee_id));
+  const used = new Set(c.assignments.filter(a => String(a.task_id) === String(taskId) && ['pending', 'accepted'].includes(a.status)).map(a => a.assignee_id));
   const choices = c.contacts.filter(id => !used.has(id));
   return <fieldset className="assignment-picker"><legend>Share this task (optional)</legend><label>Assign to a contact<select value={value} onChange={e => { onChange(e.target.value); if (e.target.value) onInviteEmail(''); }} disabled={disabled || !c.available || Boolean(inviteEmail)}>
     <option value="">{taskId ? 'No new assignment' : 'Just me'}</option>
@@ -86,12 +101,37 @@ export function AssignedView({ c, onOpen }) {
   </>;
 }
 
+function OwnerAssignmentActions({ c, assignment }) {
+  const { busy, error, run } = useAction();
+  if (!['pending', 'accepted'].includes(assignment.status)) return null;
+  const cancel = () => {
+    if (!window.confirm('Cancel this assignment? The assignee will immediately lose access to the shared task.')) return;
+    run(() => c.act('cancelAssignment', assignment.id));
+  };
+  return <><button className="text-btn danger-text" disabled={busy || !c.available} onClick={cancel}>Cancel assignment</button>{error && <p className="inline-error" role="alert">{error}</p>}</>;
+}
+
+export function AssignedByMeView({ c, tasks, onOpen }) {
+  const [filter, setFilter] = useState('active');
+  const owned = c.assignments.filter(assignment => assignment.owner_id === c.uid);
+  const rows = owned.filter(assignment => filter === 'all' || (filter === 'active' ? ['pending', 'accepted'].includes(assignment.status) : assignment.status === filter));
+  const filters = ['active', 'pending', 'accepted', 'completed', 'declined', 'cancelled', 'all'];
+  return <><div className="page-head"><div><span className="eyebrow">FOLLOW THROUGH</span><h1>Assigned by me</h1><p>See every task you sent and withdraw access when plans change.</p></div><Send size={28}/></div>
+    <div className="segmented">{filters.map(item => <button key={item} className={item === filter ? 'active' : ''} onClick={() => setFilter(item)}>{item[0].toUpperCase() + item.slice(1)}</button>)}</div>
+    <div className="collab-list assigned-list">{rows.map(assignment => { const task = tasks.find(row => String(row.id) === String(assignment.task_id)); return <article className="collab-task-card" key={assignment.id}>
+      <div className="collab-card-head"><div><small>To {personName(c.profiles[assignment.assignee_id])}</small><h2><button className="collab-title" disabled={!task} onClick={() => task && onOpen(task)}>{task?.title || 'Task no longer available'}</button></h2></div><Status status={assignment.status}/></div>
+      {task && <p className="collab-meta">{task.date ? `Due ${task.date}${task.time ? ` at ${task.time.slice(0, 5)}` : ''}` : 'No due date'} · {task.priority} priority{task.completed ? ' · You marked the task complete' : ''}</p>}
+      <div className="owner-assignment-actions">{task && <button className="text-btn" onClick={() => onOpen(task)}><MessageCircle size={15}/> Open task & discussion</button>}<OwnerAssignmentActions c={c} assignment={assignment}/></div>
+    </article>; })}{!rows.length && <div className="empty-state"><Send/><h3>{c.loading ? 'Loading assignments…' : 'No sent assignments here'}</h3><p>Tasks you assign to contacts will appear here with their latest response.</p></div>}</div>
+  </>;
+}
+
 export function TaskCollaboration({ c, taskId }) {
   const { busy, error, run } = useAction();
   const rows = c.assignments.filter(a => String(a.task_id) === String(taskId));
   const invitations = c.emailInvites.filter(invite => String(invite.task_id) === String(taskId) && invite.status === 'pending');
   if (!rows.length && !invitations.length) return null;
-  return <section className="task-collaboration"><h3>Assignments</h3>{invitations.map(invite => <div className="collab-card" key={invite.id}><div className="collab-person"><strong>{invite.invitee_email}</strong><small>Waiting for them to join Daymark · expires {new Date(invite.expires_at).toLocaleString()}</small></div><Status status="invited"/><div className="collab-actions"><button className="text-btn" disabled={busy || !c.available} onClick={() => run(() => c.act('resendEmailInvite', invite))}>Resend</button><button className="text-btn danger-text" disabled={busy || !c.available} onClick={() => run(() => c.act('cancelEmailInvite', invite.id))}>Cancel</button></div></div>)}{rows.map(a => <div className="collab-card" key={a.id}><ProfileAvatar profile={c.profiles[a.assignee_id]} small/><div className="collab-person"><strong>{personName(c.profiles[a.assignee_id])}</strong><small>You own this task</small></div><Status status={a.status}/></div>)}{error && <p className="inline-error" role="alert">{error}</p>}<p className="field-help">Assignment completion is separate from your task checkbox. Recurring tasks create a private next occurrence.</p>{rows.length > 0 && <><Comments c={c} taskId={taskId} assignments={rows}/><TaskActivity c={c} taskId={taskId}/></>}</section>;
+  return <section className="task-collaboration"><h3>Assignments</h3>{invitations.map(invite => <div className="collab-card" key={invite.id}><div className="collab-person"><strong>{invite.invitee_email}</strong><small>Waiting for them to join Daymark · expires {new Date(invite.expires_at).toLocaleString()}</small></div><Status status="invited"/><div className="collab-actions"><button className="text-btn" disabled={busy || !c.available} onClick={() => run(() => c.act('resendEmailInvite', invite))}>Resend</button><button className="text-btn danger-text" disabled={busy || !c.available} onClick={() => run(() => c.act('cancelEmailInvite', invite.id))}>Cancel</button></div></div>)}{rows.map(a => <div className="collab-card" key={a.id}><ProfileAvatar profile={c.profiles[a.assignee_id]} small/><div className="collab-person"><strong>{personName(c.profiles[a.assignee_id])}</strong><small>You own this task</small></div><Status status={a.status}/><OwnerAssignmentActions c={c} assignment={a}/></div>)}{error && <p className="inline-error" role="alert">{error}</p>}<p className="field-help">Assignment completion is separate from your task checkbox. Recurring tasks create a private next occurrence.</p>{rows.length > 0 && <><Comments c={c} taskId={taskId} assignments={rows}/><TaskActivity c={c} taskId={taskId}/></>}</section>;
 }
 
 function Comments({ c, taskId, assignments }) {

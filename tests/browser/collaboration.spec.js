@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { setup, ME, OTHER, THIRD } from './fixtures';
 
 test('contacts accept requests and invite both existing and new users by email', async ({ page }) => {
@@ -41,6 +42,44 @@ test('owner creates and assigns once; failed assignment preserves the saved task
   await page.getByRole('button',{name:'Prepare monthly report',exact:false}).click();
   await expect(page.getByText('You own this task')).toBeVisible();
   await expect(page.getByText('pending',{exact:true})).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test('owner can manage sent work centrally and cancel active assignment access', async ({ page }) => {
+  const state=await setup(page);
+  await page.getByRole('button',{name:'Assigned by me',exact:false}).click();
+  await expect(page.getByRole('heading',{name:'Assigned by me'})).toBeVisible();
+  await expect(page.getByText('To Herbert',{exact:true})).toBeVisible();
+  await expect(page.getByText('Review supplier payment',{exact:true})).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await page.locator('.collab-meta').evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth))).toBe(true);
+  await page.screenshot({path:'test-results/mobile-assigned-by-me-v18.png',fullPage:true});
+  page.once('dialog', dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Cancel assignment',exact:true}).click();
+  await expect(page.getByText('No sent assignments here',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Cancelled',exact:true}).click();
+  await expect(page.getByText('Review supplier payment',{exact:true})).toBeVisible();
+  expect(state.db.task_assignments.find(assignment=>assignment.id==='a2').status).toBe('cancelled');
+  expect(state.db.task_activity.some(activity=>activity.assignment_id==='a2'&&activity.event_type==='cancelled'&&activity.actor_id===ME)).toBe(true);
+  expect(state.db.notifications.some(notification=>notification.assignment_id==='a2'&&notification.type==='assignment_cancelled'&&notification.user_id===OTHER)).toBe(true);
+  expect(state.errors).toEqual([]);
+});
+
+test('removing a contact revokes active shared tasks and still allows a later reconnection request', async ({ page }) => {
+  const state=await setup(page);
+  await page.getByRole('button',{name:'Contacts',exact:false}).click();
+  page.once('dialog', dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Remove contact',exact:true}).click();
+  await expect(page.getByText('Contact removed. 2 active assignments were cancelled.',{exact:true})).toBeVisible();
+  expect(state.db.connections.find(connection=>connection.id==='c1').status).toBe('cancelled');
+  expect(state.db.task_assignments.filter(assignment=>assignment.id==='a1'||assignment.id==='a2').every(assignment=>assignment.status==='cancelled')).toBe(true);
+  await page.getByLabel('Invite someone by email').fill('herbert@example.com');
+  await page.getByRole('button',{name:'Send invitation'}).click();
+  await expect(page.getByText('Contact request sent.',{exact:false})).toBeVisible();
+  expect(state.db.connections.find(connection=>connection.id==='c1').status).toBe('pending');
+  expect(state.db.connections.find(connection=>connection.id==='c1').requester_id).toBe(ME);
   expect(state.errors).toEqual([]);
 });
 
@@ -326,6 +365,23 @@ test('profile settings show the name, update identity and provide account securi
   await page.setViewportSize({width:390,height:844});
   await expect(page.getByRole('dialog',{name:'Profile & settings'})).toHaveCSS('width','390px');
   await page.screenshot({path:'test-results/mobile-profile-settings.png',animations:'disabled'});
+  expect(state.errors).toEqual([]);
+});
+
+test('account export downloads personal and collaboration data without session credentials', async ({page})=>{
+  const state=await setup(page);
+  await page.locator('.sidebar-profile').click();
+  const downloadPromise=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download my data'}).click();
+  const download=await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^daymark-export-\d{4}-\d{2}-\d{2}\.json$/);
+  const data=JSON.parse(await readFile(await download.path(),'utf8'));
+  expect(data.appVersion).toBe('1.8.0');
+  expect(data.account.id).toBe(ME);
+  expect(data.tasks.some(task=>task.id==='owned-task')).toBe(true);
+  expect(data.collaboration.assignments.some(assignment=>assignment.id==='a2')).toBe(true);
+  expect(JSON.stringify(data)).not.toContain('access_token');
+  await expect(page.locator('.settings-modal .inline-success')).toContainText('export has been downloaded');
   expect(state.errors).toEqual([]);
 });
 

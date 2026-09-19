@@ -2,14 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, Bell, CalendarCheck2, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight,
   Circle, Clock3, File, FileText, Image as ImageIcon, Inbox, ListTodo, Menu, Mic, MoreHorizontal,
-  NotebookPen, Paperclip, Pin, Play, Plus, Search, Square, Tag, Trash2, X, Cloud, RefreshCw, WifiOff, Mail, LockKeyhole, Users
+  NotebookPen, Paperclip, Pin, Play, Plus, Search, Send, Square, Tag, Trash2, X, Cloud, RefreshCw, WifiOff, Mail, LockKeyhole, Users
 } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useDaymarkCloud } from './hooks/useDaymarkCloud';
 import { useDaymarkAuth } from './hooks/useDaymarkAuth';
 import { useCollaboration } from './hooks/useCollaboration';
 import { migrateAccountCache } from './lib/accountCache';
-import { ContactsView, AssignedView, AssignedDetail, NotificationBell, CollaborationHealth, AssignmentPicker, TaskCollaboration } from './components/Collaboration';
+import { ContactsView, AssignedView, AssignedByMeView, AssignedDetail, NotificationBell, CollaborationHealth, AssignmentPicker, TaskCollaboration } from './components/Collaboration';
 import { AccountSettings, ProfileAvatar, ThemeSwitch, accountDisplayName } from './components/AccountSettings';
 
 const CATEGORIES = [
@@ -303,6 +303,46 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
     later:tasks.filter(t=>!t.completed && t.list==='later').length,
   }),[tasks]);
 
+  const exportAccountData=async()=>{
+    const remote = navigator.onLine
+      ? await collaboration.api.exportData()
+      : { comments: [], activity: [], notifications: collaboration.notifications };
+    const payload = {
+      format: 'daymark-account-export',
+      schemaVersion: 1,
+      appVersion: '1.8.0',
+      exportedAt: new Date().toISOString(),
+      account: {
+        id: auth.session.user.id,
+        email: auth.session.user.email,
+        profile: ownProfile || null,
+      },
+      tasks,
+      notes,
+      collaboration: {
+        connections: collaboration.connections,
+        assignments: collaboration.assignments,
+        emailInvites: collaboration.emailInvites,
+        profiles: collaboration.profiles,
+        preferences: collaboration.preferences,
+        pendingOutbox: collaboration.outbox,
+        ...remote,
+      },
+      note: navigator.onLine
+        ? 'Attachment metadata is included with notes; attachment files are not embedded in this JSON export.'
+        : 'Created offline. Collaboration comments and activity may be incomplete. Attachment files are not embedded.',
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `daymark-export-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   if (cloud.authLoading) return <AppLoading/>;
   if (!cloud.configured) return <ConfigError/>;
   if (!cloud.session) return <AuthScreen signIn={cloud.signIn} signUp={cloud.signUp}/>;
@@ -315,6 +355,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
         <NavItem icon={CalendarCheck2} label="Today" active={tab==='today'} count={counts.today} onClick={()=>{setTab('today');setSidebar(false)}}/>
         <NavItem icon={ListTodo} label="Tasks" active={tab==='tasks'} onClick={()=>{setTab('tasks');setSidebar(false)}}/>
         <NavItem icon={Users} label="Assigned to me" active={tab==='assigned'} count={collaboration.assignments.filter(a=>a.assignee_id===auth.session.user.id && ['pending','accepted'].includes(a.status)).length} onClick={()=>{setTab('assigned');setSidebar(false)}}/>
+        <NavItem icon={Send} label="Assigned by me" active={tab==='sent'} count={collaboration.assignments.filter(a=>a.owner_id===auth.session.user.id && ['pending','accepted'].includes(a.status)).length} onClick={()=>{setTab('sent');setSidebar(false)}}/>
         <NavItem icon={Users} label="Contacts" active={tab==='contacts'} count={collaboration.connections.filter(c=>c.addressee_id===auth.session.user.id && c.status==='pending').length} onClick={()=>{setTab('contacts');setSidebar(false)}}/>
         <NavItem icon={FileText} label="Notes" active={tab==='notes'} onClick={()=>{setTab('notes');setSidebar(false)}}/>
         <NavItem icon={CalendarDays} label="Calendar" active={tab==='calendar'} onClick={()=>{setTab('calendar');setSidebar(false)}}/>
@@ -344,6 +385,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
         {notice && <div className={notice.tone === 'success' ? 'inline-success app-notice' : 'inline-error app-notice'} role="status">{notice.text}<button className="text-btn" onClick={()=>setNotice(null)}>Dismiss</button></div>}
         {tab==='contacts' && <ContactsView c={collaboration}/>}
         {tab==='assigned' && <AssignedView c={collaboration} onOpen={setAssignedDetail}/>}
+        {tab==='sent' && <AssignedByMeView c={collaboration} tasks={tasks} onOpen={openTaskEditor}/>}
         {tab==='today' && <TodayView tasks={tasks} notes={notes} completeTask={completeTask} setEditingTask={openTaskEditor} setEditingNote={openNoteEditor} toggleNoteChecklist={toggleNoteChecklist} openAdd={openAdd} setTab={setTab}/>} 
         {tab==='tasks' && <TasksView tasks={tasks} view={taskView} setView={setTaskView} completeTask={completeTask} setEditingTask={openTaskEditor} deleteTask={deleteTask} openAdd={openAdd}/>} 
         {tab==='notes' && <NotesView notes={notes} setNotes={setNotes} setEditingNote={openNoteEditor} toggleNoteChecklist={toggleNoteChecklist} convertNote={convertNote} openAdd={openAdd}/>} 
@@ -353,7 +395,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
     </main>
 
     {assignedDetail && <AssignedDetail c={collaboration} assignmentId={assignedDetail} onClose={()=>setAssignedDetail(null)}/>}
-    {accountSettings && <AccountSettings auth={auth} collaboration={collaboration} profile={ownProfile} dark={dark} setDark={setDark} onSaved={collaboration.refresh} onClose={()=>setAccountSettings(false)}/>}
+    {accountSettings && <AccountSettings auth={auth} collaboration={collaboration} profile={ownProfile} dark={dark} setDark={setDark} onExport={exportAccountData} onSaved={collaboration.refresh} onClose={()=>setAccountSettings(false)}/>}
     <button className="fab" onClick={()=>openAdd('quick')} aria-label="Add"><Plus/></button>
 
     {(composer || editingTask || editingNote) && <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget){setComposer(false);setEditingTask(null);setEditingNote(null)}}}>

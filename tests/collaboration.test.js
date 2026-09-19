@@ -29,13 +29,15 @@ test('accepted contacts work in both directions and exclude pending/other users'
 });
 test('RPC calls match the installed text-ID migration and reject unauthorized transitions', async () => {
   const calls = [], api = collaborationApi({ rpc: async (name, args) => { calls.push({ name, args }); return { data: 'ok', error: null }; } }, 'me');
-  await api.invite(' colleague@example.com '); await api.respondContact('c', 'accepted'); await api.assign(123, 'other');
+  await api.invite(' colleague@example.com '); await api.respondContact('c', 'accepted'); await api.closeConnection('c'); await api.assign(123, 'other'); await api.cancelAssignment('owned-a');
   await api.respondAssignment({ id: 'a', assignee_id: 'me', status: 'pending' }, 'declined');
   await api.respondAssignment({ id: 'a', assignee_id: 'me', status: 'accepted' }, 'completed');
   assert.deepEqual(calls, [
-    { name: 'daymark_invite_contact', args: { invitee_email: 'colleague@example.com' } },
+    { name: 'daymark_invite_or_reconnect_contact', args: { invitee_email: 'colleague@example.com' } },
     { name: 'daymark_respond_contact', args: { target_connection: 'c', response: 'accepted' } },
-    { name: 'daymark_assign_task', args: { target_task: '123', target_user: 'other' } },
+    { name: 'daymark_close_connection', args: { target_connection: 'c' } },
+    { name: 'daymark_assign_or_reactivate_task', args: { target_task: '123', target_user: 'other' } },
+    { name: 'daymark_cancel_assignment', args: { target_assignment: 'owned-a' } },
     { name: 'daymark_set_assignment_status', args: { target_assignment: 'a', target_status: 'declined' } },
     { name: 'daymark_set_assignment_status', args: { target_assignment: 'a', target_status: 'completed' } },
   ]);
@@ -54,7 +56,7 @@ test('unknown emails receive a secure Supabase magic-link invitation without a s
     const client = {
       rpc: async (name, args) => {
         calls.push({name,args});
-        if (name === 'daymark_invite_contact') return { data:null, error:{message:'No Daymark user found with that email'} };
+        if (name === 'daymark_invite_or_reconnect_contact') return { data:null, error:{message:'No Daymark user found with that email'} };
         if (name === 'daymark_create_email_invite') return { data:[{invite_id:'invite-1',invite_token:'secure-token',expires_at:'2026-10-03T00:00:00Z'}], error:null };
         return {data:null,error:null};
       },

@@ -52,9 +52,9 @@ export function collaborationApi(client, userId) {
     return invitation;
   };
   return {
-    invite: email => rpc('daymark_invite_contact', { invitee_email: email.trim() }),
+    invite: email => rpc('daymark_invite_or_reconnect_contact', { invitee_email: email.trim() }),
     inviteAny: async email => {
-      try { await rpc('daymark_invite_contact', { invitee_email: email.trim() }); return { delivery: 'in_app' }; }
+      try { await rpc('daymark_invite_or_reconnect_contact', { invitee_email: email.trim() }); return { delivery: 'in_app' }; }
       catch (error) {
         if (!/no daymark user found/i.test(error.message || '')) throw error;
         return { delivery: 'email', ...(await emailInvitation(email)) };
@@ -68,7 +68,9 @@ export function collaborationApi(client, userId) {
       if (!['accepted', 'declined'].includes(response)) throw new Error('Invalid response');
       return rpc('daymark_respond_contact', { target_connection: id, response });
     },
-    assign: (taskId, user) => rpc('daymark_assign_task', { target_task: String(taskId), target_user: user }),
+    closeConnection: id => rpc('daymark_close_connection', { target_connection: id }),
+    assign: (taskId, user) => rpc('daymark_assign_or_reactivate_task', { target_task: String(taskId), target_user: user }),
+    cancelAssignment: id => rpc('daymark_cancel_assignment', { target_assignment: id }),
     respondAssignment: (assignment, response) => {
       if (!assignmentActions(assignment, userId).includes(response)) throw new Error('This action is no longer available. Refresh and try again.');
       return rpc('daymark_set_assignment_status', { target_assignment: assignment.id, target_status: response });
@@ -81,6 +83,14 @@ export function collaborationApi(client, userId) {
       return rpc('daymark_add_task_comment', { target_task: String(taskId), comment_body: text, request_nonce: clientNonce });
     },
     savePreferences: preferences => checked(client.from('notification_preferences').upsert({ user_id: userId, ...preferences, updated_at: new Date().toISOString() })),
+    exportData: async () => {
+      const [comments, activity, notifications] = await Promise.all([
+        allRows(() => client.from('task_comments').select('*').order('created_at').order('id')),
+        allRows(() => client.from('task_activity').select('*').order('created_at').order('id')),
+        allRows(() => client.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false }).order('id')),
+      ]);
+      return { comments, activity, notifications };
+    },
     markRead: id => checked(client.from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).eq('id', id).is('read_at', null)),
     markAllRead: () => checked(client.from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).is('read_at', null)),
   };
