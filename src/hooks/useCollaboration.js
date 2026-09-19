@@ -8,6 +8,7 @@ export const defaultNotificationPreferences = {
   comment_updates: true,
   task_reminders: true,
   browser_notifications: true,
+  push_notifications: false,
   email_notifications: false,
 };
 

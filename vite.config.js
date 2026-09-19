@@ -12,6 +12,7 @@ export default defineConfig({
       manifest: {
         name: 'JotRelay — Tasks & Notes',
         short_name: 'JotRelay',
+        id: '/',
         description: 'A calm, offline-first everyday task and notes organizer.',
         theme_color: '#0f766e',
         background_color: '#f5f7f6',
@@ -24,6 +25,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
+        importScripts: ['push-sw.js'],
       },
     }),
   ],

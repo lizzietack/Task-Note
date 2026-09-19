@@ -1,4 +1,4 @@
-# v1.8 validation — 20 September 2026
+# v1.9 validation — 20 September 2026
 
 ## Passed
 
@@ -15,17 +15,18 @@
   - Account export with personal and collaboration data and no session credentials.
   - v1.4 editing, recurrence, quick capture, notes, search, checklists, attachments, pinning, theme, calendar and account isolation.
   - Mobile navigation, task editor sizing, safe-area actions, offline personal notes and dark-note contrast.
-- `npm run build`: successful Vite production build and PWA service-worker generation.
+- `npm run build`: successful Vite production build and PWA service-worker generation. The generated worker imports `push-sw.js`, and the manifest includes a stable app ID for installed-app notification identity.
 - The migration preserves all legacy notification values and existing collaboration rows. Closing a relationship changes active assignments to `cancelled`; it does not delete task or discussion history.
-- The frontend accepts only Supabase publishable/anon credentials. No service-role key is used.
+- The Web Push tables use per-user RLS, the private delivery queue has no client policy, and the worker can claim or finish jobs only with the Vault-backed delivery secret.
+- The frontend and Edge Function use only Supabase publishable/anon credentials. No service-role key is used.
 
 ## Not exercised against the live project
 
 No live account credentials or migration access were supplied. The browser suite uses mocked Auth, REST, Storage and Realtime responses and never writes to the live database.
 
-Run `DAYMARK_V1.8_COLLABORATION_CONTROLS.sql` in the existing project after the v1.7 migration and before deploying the frontend. Then follow `SUPABASE_V1.8_SETUP.md` with two test accounts and one unrelated account to confirm the live RLS and RPC grants.
+Run `DAYMARK_V1.9_WEB_PUSH_NOTIFICATIONS.sql` in the existing project after the v1.8 migration and before deploying the frontend. Then follow `SUPABASE_V1.9_SETUP.md` with two test accounts and a physical phone to confirm locked-screen delivery.
 
-The optional email worker was not changed. If used, its existing Resend sender, Vault secret and schedules should remain configured as described in `SUPABASE_V1.7_SETUP.md`.
+The notification worker now handles both the existing optional Resend queue and Web Push. Existing Resend settings remain compatible; Web Push adds the VAPID settings described in `SUPABASE_V1.9_SETUP.md`.
 
 ## Preserved boundaries
 
@@ -35,4 +36,3 @@ The optional email worker was not changed. If used, its existing Resend sender, 
 - Queued collaboration actions remain account-scoped and idempotent.
 - Data export deliberately excludes authentication sessions, access tokens and private service credentials.
 - Existing v1.4 data and v1.5–v1.7 collaboration records are retained by the additive migration.
-

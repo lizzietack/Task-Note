@@ -1,8 +1,18 @@
-# JotRelay — Tasks & Notes v1.8.1
+# JotRelay — Tasks & Notes v1.9
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
 ## What's new
+
+### v1.9 lock-screen notifications
+
+- Standards-based Web Push can display assignment, comment, contact and reminder alerts while JotRelay is closed or the phone is locked.
+- Each device has its own revocable subscription protected by row-level security. Expired browser subscriptions are removed automatically.
+- The service worker opens the related JotRelay notification when an alert is tapped and avoids duplicate foreground notifications.
+- Supabase schedules reminders in the user's timezone and sends queued pushes through a secret-checked Edge Function using the publishable/anon key, never a service-role key.
+- iPhone and iPad support requires iOS/iPadOS 16.4 or later and JotRelay installed with **Add to Home Screen**. Android works from a supported browser or installed web app.
+
+Before deploying v1.9, run `DAYMARK_V1.9_WEB_PUSH_NOTIFICATIONS.sql` once after the v1.8 migration and follow `SUPABASE_V1.9_SETUP.md`.
 
 ### v1.8.1 JotRelay brand refresh
 
@@ -72,7 +82,7 @@ Assignment completion and the owner's task checkbox remain separate. Recurring t
 
 ## Existing Supabase project
 
-**Do not rerun the v1.4 setup SQL to upgrade your installation.** For an existing v1.7 installation, run only the additive v1.8 migration. A new installation must apply the migrations in version order.
+**Do not rerun the v1.4 setup SQL to upgrade your installation.** For an existing v1.8 installation, run only the additive v1.9 migration. A new installation must apply the migrations in version order.
 
 Required: profiles (including email and avatar_url), text task IDs, connections, task_assignments, task_comments, notifications, daymark_email_invites, and the existing v1.4 tables/storage bucket. The client calls these exact functions:
 
@@ -93,10 +103,13 @@ Required: profiles (including email and avatar_url), text task IDs, connections,
 | daymark_queue_due_reminders | none; scheduled database job |
 | daymark_claim_notification_deliveries | worker_secret, batch_limit |
 | daymark_finish_notification_delivery | worker_secret, delivery result fields |
+| daymark_claim_push_deliveries | worker_secret, batch_limit |
+| daymark_finish_push_delivery | worker_secret, delivery result fields |
+| daymark_invoke_delivery_worker | none; scheduled internal call |
 
 Contact and assignment notifications come from the installed functions. v1.8 adds owner cancellation, safe contact removal, reconnection and assignment reactivation. v1.7 provides comment/task-update triggers, notification preferences and an email-delivery queue. Email invitation links are sent by Supabase Auth with `signInWithOtp`; the frontend contains only the publishable key. Each signed-in user updates only their own profile email and timezone.
 
-Retain the supplied public `.env` connection, or configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env.example`. No service-role key is used; secret/service-role keys are rejected by the frontend. Realtime requires the collaboration tables in your existing `supabase_realtime` publication. See [Supabase documentation](https://supabase.com/docs/guides/realtime/postgres-changes).
+Retain the supplied public `.env` connection, or configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from `.env.example`. v1.9 also uses the public `VITE_WEB_PUSH_PUBLIC_KEY`. No service-role key is used; secret/service-role keys are rejected by the frontend. Realtime requires the collaboration tables in your existing `supabase_realtime` publication. See [Supabase documentation](https://supabase.com/docs/guides/realtime/postgres-changes).
 
 ## Run and deploy
 
@@ -117,4 +130,4 @@ The first account used after upgrade claims the old v1.4 device cache once; othe
 
 ## Validation boundary
 
-See `VALIDATION.md`. No live credentials were supplied: actual RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, invite/accept, assign, cancel an assignment, remove and reconnect the contact, and verify revoked access. Browser notifications require JotRelay to be running; closed-app email delivery requires the optional notification worker.
+See `VALIDATION.md`. Live RLS, RPC grants, storage and two-account delivery require a live smoke check. With two accounts, enable Web Push on the recipient's device, lock its screen, then test assignment, comment and reminder delivery. Operating systems may delay notifications because of Focus, Do Not Disturb, battery or network policies.

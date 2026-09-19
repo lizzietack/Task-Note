@@ -353,6 +353,9 @@ test('profile settings show the name, update identity and provide account securi
   await page.getByLabel('Timezone').fill('Europe/London');
   await page.getByRole('button',{name:'Save timezone'}).click();
   await expect(page.locator('.settings-modal .inline-success')).toContainText('timezone has been updated');
+  await expect(page.getByText('Lock-screen notifications',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Enable on this device'})).toBeDisabled();
+  await expect(page.getByText(/administrator still needs to finish/i)).toBeVisible();
   await page.getByLabel('Email copies (useful when JotRelay is closed)').check();
   await page.getByRole('button',{name:'Save notification preferences'}).click();
   await expect(page.locator('.settings-modal .inline-success')).toContainText('notification preferences have been saved');
@@ -376,7 +379,7 @@ test('account export downloads personal and collaboration data without session c
   const download=await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^jotrelay-export-\d{4}-\d{2}-\d{2}\.json$/);
   const data=JSON.parse(await readFile(await download.path(),'utf8'));
-  expect(data.appVersion).toBe('1.8.1');
+  expect(data.appVersion).toBe('1.9.0');
   expect(data.account.id).toBe(ME);
   expect(data.tasks.some(task=>task.id==='owned-task')).toBe(true);
   expect(data.collaboration.assignments.some(assignment=>assignment.id==='a2')).toBe(true);

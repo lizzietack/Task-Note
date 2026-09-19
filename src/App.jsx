@@ -11,6 +11,7 @@ import { useCollaboration } from './hooks/useCollaboration';
 import { migrateAccountCache } from './lib/accountCache';
 import { ContactsView, AssignedView, AssignedByMeView, AssignedDetail, NotificationBell, CollaborationHealth, AssignmentPicker, TaskCollaboration } from './components/Collaboration';
 import { AccountSettings, ProfileAvatar, ThemeSwitch, accountDisplayName } from './components/AccountSettings';
+import { syncPushSubscription } from './lib/pushNotifications';
 
 const CATEGORIES = [
   { name: 'Personal', color: '#0F766E' },
@@ -136,8 +137,10 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
   const [assignedDetail, setAssignedDetail] = useState(null);
   const [accountSettings, setAccountSettings] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [pushNotificationId, setPushNotificationId] = useState(() => new URL(window.location.href).searchParams.get('jotrelay_notification') || '');
   const seenNotifications = useRef(new Set());
   const notificationsReady = useRef(false);
+  const pushLookupStarted = useRef('');
   const [pendingInviteToken, setPendingInviteToken] = useState(() => {
     const urlToken = new URL(window.location.href).searchParams.get('daymark_invite');
     if (urlToken) localStorage.setItem('daymark.pending-email-invite.v1', urlToken);
@@ -148,12 +151,47 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
   const displayName = accountDisplayName(ownProfile, auth.session.user);
   const navigateNotification = notification => {
     if (notification.connection_id) { setTab('contacts'); return; }
-    const a = collaboration.assignments.find(a => a.id === notification.assignment_id);
+    const a = collaboration.assignments.find(a => a.id === notification.assignment_id)
+      || collaboration.assignments.find(a => String(a.task_id) === String(notification.task_id) && a.assignee_id === auth.session.user.id && ['pending', 'accepted', 'completed'].includes(a.status));
     if (a?.assignee_id === auth.session.user.id) { setTab('assigned'); setAssignedDetail(a.id); return; }
     const task = tasks.find(t => String(t.id) === String(notification.task_id));
     if (task) openTaskEditor(task);
     else { setTab('assigned'); setNotice({ tone: 'error', text: 'This task is no longer available, or your access has changed.' }); }
   };
+
+  useEffect(() => {
+    if (!collaboration.preferences.push_notifications) return;
+    syncPushSubscription(auth.session.user.id).catch(() => {});
+  }, [auth.session.user.id, collaboration.preferences.push_notifications]);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const receive = event => {
+      if (event.data?.type !== 'JOTRELAY_NOTIFICATION_CLICK') return;
+      if (event.data.notificationId) setPushNotificationId(event.data.notificationId);
+      collaboration.refresh();
+    };
+    navigator.serviceWorker.addEventListener('message', receive);
+    return () => navigator.serviceWorker.removeEventListener('message', receive);
+  }, [collaboration.refresh]);
+
+  useEffect(() => {
+    if (!pushNotificationId || collaboration.loading) return;
+    const notification = collaboration.notifications.find(row => row.id === pushNotificationId);
+    if (!notification && pushLookupStarted.current !== pushNotificationId) {
+      pushLookupStarted.current = pushNotificationId;
+      collaboration.refresh();
+      return;
+    }
+    if (notification) {
+      navigateNotification(notification);
+      if (!notification.read_at) collaboration.act('markRead', notification.id).catch(() => {});
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('jotrelay_notification');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    setPushNotificationId('');
+  }, [pushNotificationId, collaboration.loading, collaboration.notifications, collaboration.revision]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -173,7 +211,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
 
 
   useEffect(()=>{
-    if(typeof window==='undefined' || !collaboration.preferences.task_reminders || !collaboration.preferences.browser_notifications || !('Notification' in window) || Notification.permission!=='granted') return;
+    if(typeof window==='undefined' || collaboration.preferences.push_notifications || !collaboration.preferences.task_reminders || !collaboration.preferences.browser_notifications || !('Notification' in window) || Notification.permission!=='granted') return;
     const key='daymark.notifications.sent.v1';
     const check=()=>{
       const now=Date.now();
@@ -197,7 +235,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
       }
     };
     check(); const timer=setInterval(check,30000); return()=>clearInterval(timer);
-  },[tasks,collaboration.preferences.task_reminders,collaboration.preferences.browser_notifications]);
+  },[tasks,collaboration.preferences.task_reminders,collaboration.preferences.browser_notifications,collaboration.preferences.push_notifications]);
 
   useEffect(() => {
     const rows = collaboration.notifications || [];
@@ -206,7 +244,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
       notificationsReady.current = true;
       return;
     }
-    const canNotify = collaboration.preferences.browser_notifications && 'Notification' in window && Notification.permission === 'granted';
+    const canNotify = !collaboration.preferences.push_notifications && collaboration.preferences.browser_notifications && 'Notification' in window && Notification.permission === 'granted';
     rows.forEach(notification => {
       if (!seenNotifications.current.has(notification.id) && !notification.read_at && canNotify) {
         const alert = new Notification(notification.title, { body: notification.message, tag: `daymark-collaboration-${notification.id}` });
@@ -214,7 +252,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
       }
       seenNotifications.current.add(notification.id);
     });
-  }, [collaboration.notifications, collaboration.preferences.browser_notifications]);
+  }, [collaboration.notifications, collaboration.preferences.browser_notifications, collaboration.preferences.push_notifications]);
 
   useEffect(() => {
     const modalOpen = composer || editingTask || editingNote || assignedDetail || accountSettings;
@@ -310,7 +348,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
     const payload = {
       format: 'daymark-account-export',
       schemaVersion: 1,
-      appVersion: '1.8.1',
+      appVersion: '1.9.0',
       exportedAt: new Date().toISOString(),
       account: {
         id: auth.session.user.id,

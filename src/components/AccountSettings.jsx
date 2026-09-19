@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Check, Download, Trash2, X } from 'lucide-react';
+import { currentPushStatus, disablePushNotifications, enablePushNotifications, pushAvailability } from '../lib/pushNotifications';
 
 function friendlyEmailName(email = '') {
   return email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) || 'JotRelay user';
@@ -36,6 +37,7 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
   const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const [timezone, setTimezone] = useState(profile?.timezone || detectedTimezone);
   const [preferences, setPreferences] = useState(() => ({ ...collaboration.preferences }));
+  const [pushStatus, setPushStatus] = useState(() => ({ ...pushAvailability(), permission: 'default', subscribed: false }));
   const preferencesLoaded = useRef(!collaboration.loading);
   const [busy, setBusy] = useState(''), [message, setMessage] = useState(''), [error, setError] = useState('');
   const run = async (kind, action, success) => {
@@ -56,6 +58,18 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
       preferencesLoaded.current = true;
     }
   }, [collaboration.loading, collaboration.preferences]);
+  useEffect(() => { currentPushStatus().then(setPushStatus).catch(() => {}); }, []);
+  const pushDescription = pushStatus.subscribed
+    ? 'Enabled on this device. Alerts can appear while JotRelay is closed or the screen is locked.'
+    : pushStatus.ios && !pushStatus.standalone
+      ? 'On iPhone or iPad, use Share → Add to Home Screen, open the installed JotRelay app, then enable alerts.'
+      : !pushStatus.supported
+        ? 'This browser does not support lock-screen Web Push notifications.'
+        : !pushStatus.configured
+          ? 'The JotRelay administrator still needs to finish the secure push-delivery setup.'
+          : pushStatus.permission === 'denied'
+            ? 'Notifications are blocked in this phone’s settings.'
+            : 'Enable this once on every phone or computer where you want alerts.';
   return <div className="overlay settings-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" ref={dialogRef} tabIndex={-1} onKeyDown={event => { if (event.key === 'Escape') onClose(); }}>
       <div className="modal-head"><div><span className="eyebrow">ACCOUNT</span><h2 id="settings-title">Profile & settings</h2></div><button type="button" className="icon" aria-label="Close settings" onClick={onClose}><X/></button></div>
@@ -94,6 +108,24 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
               ['browser_notifications','Browser notifications'],
               ['email_notifications','Email copies (useful when JotRelay is closed)'],
             ].map(([key,label]) => <label className="settings-check" key={key}><input type="checkbox" checked={Boolean(preferences[key])} onChange={event => setPreferences(current => ({ ...current, [key]: event.target.checked }))}/><span>{label}</span></label>)}
+          </div>
+          <div className="push-notification-setting">
+            <div><strong>Lock-screen notifications</strong><small className="field-help">{pushDescription}</small></div>
+            <button type="button" className="secondary" disabled={Boolean(busy) || !collaboration.available || (!pushStatus.subscribed && (!pushStatus.supported || !pushStatus.configured))} onClick={() => run('push', async () => {
+              if (pushStatus.subscribed) {
+                const status = await disablePushNotifications();
+                setPushStatus(status);
+                const next = { ...preferences, push_notifications: status.anySubscribed };
+                setPreferences(next);
+                await collaboration.act('savePreferences', next);
+              } else {
+                const status = await enablePushNotifications(auth.session.user.id);
+                setPushStatus(status);
+                const next = { ...preferences, push_notifications: true, browser_notifications: true };
+                setPreferences(next);
+                await collaboration.act('savePreferences', next);
+              }
+            }, pushStatus.subscribed ? 'Lock-screen notifications have been disabled on this device.' : 'Lock-screen notifications are enabled on this device.')}>{busy === 'push' ? 'Updating…' : pushStatus.subscribed ? 'Disable on this device' : 'Enable on this device'}</button>
           </div>
           <button type="button" className="secondary" disabled={Boolean(busy) || !collaboration.available} onClick={() => run('notifications', async () => {
             if (preferences.browser_notifications && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
