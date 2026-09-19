@@ -1,9 +1,9 @@
-# v1.5 validation — 19 September 2026
+# v1.5.1 validation — 19 September 2026
 
 ## Passed
 
 - `npm test`: 9 tests. Role/status permissions, comment eligibility and validation, accepted contacts, exact installed RPC contracts, error propagation, notification recipient scoping, pagination and per-account legacy-cache migration.
-- `npm run test:browser`: 10 tests in headless Microsoft Edge. Existing Supabase client runs against mocked Auth, REST and WebSocket responses; no live database writes.
+- `npm run test:browser`: 13 tests in headless Microsoft Edge. Existing Supabase client runs against mocked Auth, REST and WebSocket responses; no live database writes.
   - Invite an existing account, surface unknown-email errors, accept/decline contacts and restrict assignment choices.
   - Save/assign a task; recover from assignment failure without duplicating the saved task.
   - Assignee accept/comment/complete with no owner editing and no shared-task personal-cache writes.
@@ -13,8 +13,11 @@
   - Mobile layout and offline personal-note capture with collaboration actions disabled.
   - Realtime owner task updates without repeated write echoes.
   - Note checklists, local file attachments, pinning, theme and calendar controls; voice-recording control remains available.
+- Mobile task-editor height, width, scrolling, safe-area actions, 16px controls and iPhone zoom prevention.
+- Display-name, email and password updates through Profile & settings, including the professional sign-out action.
+- WCAG AA contrast checks for dark-mode colored note titles and body text.
 - `npm run build`: successful Vite production build and PWA service-worker generation.
-- Desktop dark Contacts and mobile Assigned to me screenshots visually inspected.
+- Mobile task editor, Profile & settings and dark colored-note screenshots visually inspected.
 - Supplied environment checked locally: only Supabase URL and a verified public key. No service-role key used.
 
 ## Not exercised against the live project

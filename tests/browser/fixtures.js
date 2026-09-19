@@ -15,7 +15,7 @@ export async function setup(page, userId = ME) {
   };
   const calls = [], channels = [];
   let current = userId, failAssign = false;
-  const session = uid => ({ access_token: `${btoa('{}')}.${btoa(JSON.stringify({ sub: uid, role:'authenticated', exp: 4102444800 }))}.test`, refresh_token: 'test-refresh', expires_in: 3600, expires_at: 4102444800, token_type: 'bearer', user: { id: uid, email: db.profiles.find(p => p.id === uid).email, aud: 'authenticated', role: 'authenticated' } });
+  const session = uid => { const person=db.profiles.find(p => p.id === uid); return { access_token: `${btoa('{}')}.${btoa(JSON.stringify({ sub: uid, role:'authenticated', exp: 4102444800 }))}.test`, refresh_token: 'test-refresh', expires_in: 3600, expires_at: 4102444800, token_type: 'bearer', user: { id: uid, email: person.email, user_metadata:{display_name:person.display_name}, aud: 'authenticated', role: 'authenticated' } }; };
   await page.addInitScript(({ session, userId }) => {
     localStorage.setItem('sb-daymark-test-auth-token', JSON.stringify(session));
     localStorage.setItem(`daymark.${userId}.tasks.v1`, '[]'); localStorage.setItem(`daymark.${userId}.notes.v1`, '[]');
@@ -49,6 +49,12 @@ export async function setup(page, userId = ME) {
     if (url.pathname.includes('/auth/')) {
       if (url.pathname.endsWith('/logout')) return ok({}, 204);
       if (url.pathname.endsWith('/token')) { current = db.profiles.find(p => p.email === body.email)?.id || current; return ok(session(current)); }
+      if (url.pathname.endsWith('/user') && method === 'PUT') {
+        const person=db.profiles.find(p=>p.id===current);
+        if(body?.email) person.email=body.email;
+        if(body?.data?.display_name) person.display_name=body.data.display_name;
+        return ok(session(current).user);
+      }
       return ok(session(current).user);
     }
     if (url.pathname.includes('/rpc/')) {

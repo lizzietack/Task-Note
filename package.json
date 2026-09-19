@@ -1,7 +1,7 @@
 {
   "name": "daymark-tasks-notes",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.5.1",
   "type": "module",
   "description": "Daymark is a calm, offline-first everyday task and notes organizer.",
   "scripts": {

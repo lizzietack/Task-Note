@@ -1,8 +1,19 @@
-# Daymark — Tasks & Notes v1.5 Collaboration
+# Daymark — Tasks & Notes v1.5.1
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
 ## What's new
+
+### v1.5.1 mobile and account polish
+
+- New task and note editors become full-screen panels on phones. Their fields scroll independently while Cancel and Save remain visible above the browser safe area.
+- Form controls use a mobile-safe 16px font size so iPhone Safari does not zoom the page when a field receives focus.
+- Dark-mode note colors and secondary text use stronger contrast for comfortable reading.
+- The sidebar now shows the user's saved name instead of their email. New accounts can provide a full name during sign-up.
+- Profile & settings contains display-name, email and password controls. Email changes use Supabase's confirmation flow.
+- The appearance control is a labeled Light/Dark switch, and signing out is a clear text action inside Profile & settings.
+
+### v1.5 collaboration
 
 - Contacts: invite an existing Daymark user by exact email; accept or decline requests.
 - Assign to: select an accepted contact in the task editor. Failed assignments preserve the saved task for retry.

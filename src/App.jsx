@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, Bell, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight,
-  Circle, Clock3, File, FileText, Image as ImageIcon, Inbox, ListTodo, Menu, Mic, Moon, MoreHorizontal,
-  Paperclip, Pin, Play, Plus, Search, Sparkles, Square, Sun, Tag, Trash2, X, Zap, Cloud, LogOut, RefreshCw, WifiOff, Mail, LockKeyhole, Users
+  Circle, Clock3, File, FileText, Image as ImageIcon, Inbox, ListTodo, Menu, Mic, MoreHorizontal,
+  Paperclip, Pin, Play, Plus, Search, Sparkles, Square, Tag, Trash2, X, Zap, Cloud, RefreshCw, WifiOff, Mail, LockKeyhole, Users
 } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useDaymarkCloud } from './hooks/useDaymarkCloud';
@@ -10,6 +10,7 @@ import { useDaymarkAuth } from './hooks/useDaymarkAuth';
 import { useCollaboration } from './hooks/useCollaboration';
 import { migrateAccountCache } from './lib/accountCache';
 import { ContactsView, AssignedView, AssignedDetail, NotificationBell, CollaborationHealth, AssignmentPicker, TaskCollaboration } from './components/Collaboration';
+import { AccountSettings, ThemeSwitch, accountDisplayName } from './components/AccountSettings';
 
 const CATEGORIES = [
   { name: 'Personal', color: '#0F766E' },
@@ -120,7 +121,10 @@ function Workspace({auth}){
   const cloud = { ...useDaymarkCloud({ tasks, setTasks, notes, setNotes, session: auth.session }), ...auth };
   const collaboration = useCollaboration(auth.session);
   const [assignedDetail, setAssignedDetail] = useState(null);
+  const [accountSettings, setAccountSettings] = useState(false);
   const [notice, setNotice] = useState('');
+  const ownProfile = collaboration.profiles[auth.session.user.id];
+  const displayName = accountDisplayName(ownProfile, auth.session.user);
   const navigateNotification = notification => {
     if (notification.connection_id) { setTab('contacts'); return; }
     const a = collaboration.assignments.find(a => a.id === notification.assignment_id);
@@ -157,6 +161,14 @@ function Workspace({auth}){
     };
     check(); const timer=setInterval(check,30000); return()=>clearInterval(timer);
   },[tasks]);
+
+  useEffect(() => {
+    const modalOpen = composer || editingTask || editingNote || assignedDetail || accountSettings;
+    if (!modalOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [composer, editingTask, editingNote, assignedDetail, accountSettings]);
 
   const openAdd=(mode='quick', defaults={})=>{setEditingTask(null);setEditingNote(null);setTaskDefaults(defaults);setComposerMode(mode);setComposer(true);};
   const openTaskEditor=(task)=>{setComposer(false);setComposerMode('quick');setTaskDefaults({});setEditingNote(null);setEditingTask(task);};
@@ -249,7 +261,7 @@ function Workspace({auth}){
       </div>
       <div className="sidebar-bottom">
         <CloudStatus cloud={cloud}/>
-        <div className="sidebar-account"><div className="account-copy"><span>Signed in</span><strong title={cloud.session.user.email}>{cloud.session.user.email}</strong></div><button className="icon" title="Sign out" onClick={cloud.signOut}><LogOut size={17}/></button></div>
+        <button className="sidebar-profile" onClick={()=>{setAccountSettings(true);setSidebar(false)}}><span className="profile-avatar small">{displayName.split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase()}</span><span className="account-copy"><strong>{displayName}</strong><span>Profile & settings</span></span><ChevronRight size={17}/></button>
         <div className="sidebar-tip"><Zap size={18}/><div><strong>Capture first.</strong><span>Organize when you have time.</span></div></div>
       </div>
     </aside>
@@ -258,7 +270,7 @@ function Workspace({auth}){
       <header className="topbar">
         <button className="icon menu" onClick={()=>setSidebar(true)}><Menu/></button>
         <div className="top-spacer"/><NotificationBell c={collaboration} onNavigate={navigateNotification}/>
-        <button className="icon" aria-label="Toggle theme" onClick={()=>setDark(!dark)}>{dark?<Sun/>:<Moon/>}</button>
+        <ThemeSwitch dark={dark} setDark={setDark} compact/>
         <button className="add-top" onClick={()=>openAdd('quick')}><Plus size={19}/> <span>Add</span></button>
       </header>
       <div className="content">
@@ -275,6 +287,7 @@ function Workspace({auth}){
     </main>
 
     {assignedDetail && <AssignedDetail c={collaboration} assignmentId={assignedDetail} onClose={()=>setAssignedDetail(null)}/>}
+    {accountSettings && <AccountSettings auth={auth} profile={ownProfile} dark={dark} setDark={setDark} onSaved={collaboration.refresh} onClose={()=>setAccountSettings(false)}/>}
     <button className="fab" onClick={()=>openAdd('quick')} aria-label="Add"><Plus/></button>
 
     {(composer || editingTask || editingNote) && <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget){setComposer(false);setEditingTask(null);setEditingNote(null)}}}>
@@ -543,10 +556,10 @@ function ConfigError(){return <div className="auth-shell"><div className="auth-c
 
 function AuthScreen({signIn,signUp}){
   const [mode,setMode]=useState('signin');
-  const [email,setEmail]=useState(''); const [password,setPassword]=useState('');
+  const [name,setName]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState('');
   const [busy,setBusy]=useState(false); const [error,setError]=useState(''); const [message,setMessage]=useState('');
-  const submit=async e=>{e.preventDefault();setBusy(true);setError('');setMessage('');try{const fn=mode==='signin'?signIn:signUp;const {data,error}=await fn(email.trim(),password);if(error)throw error;if(mode==='signup'&&!data?.session)setMessage('Account created. Check your email to confirm your address, then sign in.');}catch(err){setError(err?.message||'Could not continue. Please try again.');}finally{setBusy(false)}};
-  return <div className="auth-shell"><div className="auth-panel"><div className="auth-brand"><div className="brand-mark large"><CheckCircle2 size={28}/></div><div><strong>Daymark</strong><span>Tasks & notes</span></div></div><div className="auth-copy"><span className="eyebrow">YOUR DAY, EVERYWHERE</span><h1>Remember what matters. Pick up where you left off.</h1><p>Sign in to keep tasks, notes and attachments synced across web, Android and iPhone while Daymark remains usable when your connection drops.</p><div className="auth-benefits"><span><Cloud size={17}/> Cross-device sync</span><span><LockKeyhole size={17}/> Private by account</span><span><WifiOff size={17}/> Offline-friendly</span></div></div></div><form className="auth-card" onSubmit={submit}><span className="eyebrow">{mode==='signin'?'WELCOME BACK':'CREATE ACCOUNT'}</span><h2>{mode==='signin'?'Sign in to Daymark':'Start using Daymark'}</h2><p>{mode==='signin'?'Your local Daymark data will be safely merged into your account after sign-in.':'Use the same account on every device.'}</p><label>Email<div className="input-with-icon"><Mail size={17}/><input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></div></label><label>Password<div className="input-with-icon"><LockKeyhole size={17}/><input type="password" autoComplete={mode==='signin'?'current-password':'new-password'} required minLength={8} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters"/></div></label>{error&&<div className="inline-error">{error}</div>}{message&&<div className="inline-success">{message}</div>}<button className="primary auth-submit" disabled={busy}>{busy?<><RefreshCw className="spin" size={17}/> Please wait…</>:mode==='signin'?'Sign in':'Create account'}</button><button type="button" className="auth-switch" onClick={()=>{setMode(mode==='signin'?'signup':'signin');setError('');setMessage('')}}>{mode==='signin'?'New to Daymark? Create an account':'Already have an account? Sign in'}</button></form></div>
+  const submit=async e=>{e.preventDefault();setBusy(true);setError('');setMessage('');try{const result=mode==='signin'?await signIn(email.trim(),password):await signUp(email.trim(),password,name);const {data,error}=result;if(error)throw error;if(mode==='signup'&&!data?.session)setMessage('Account created. Check your email to confirm your address, then sign in.');}catch(err){setError(err?.message||'Could not continue. Please try again.');}finally{setBusy(false)}};
+  return <div className="auth-shell"><div className="auth-panel"><div className="auth-brand"><div className="brand-mark large"><CheckCircle2 size={28}/></div><div><strong>Daymark</strong><span>Tasks & notes</span></div></div><div className="auth-copy"><span className="eyebrow">YOUR DAY, EVERYWHERE</span><h1>Remember what matters. Pick up where you left off.</h1><p>Sign in to keep tasks, notes and attachments synced across web, Android and iPhone while Daymark remains usable when your connection drops.</p><div className="auth-benefits"><span><Cloud size={17}/> Cross-device sync</span><span><LockKeyhole size={17}/> Private by account</span><span><WifiOff size={17}/> Offline-friendly</span></div></div></div><form className="auth-card" onSubmit={submit}><span className="eyebrow">{mode==='signin'?'WELCOME BACK':'CREATE ACCOUNT'}</span><h2>{mode==='signin'?'Sign in to Daymark':'Start using Daymark'}</h2><p>{mode==='signin'?'Your local Daymark data will be safely merged into your account after sign-in.':'Use the same account on every device.'}</p>{mode==='signup'&&<label>Full name<div className="input-with-icon"><Users size={17}/><input type="text" autoComplete="name" required minLength={2} maxLength={80} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/></div></label>}<label>Email<div className="input-with-icon"><Mail size={17}/><input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></div></label><label>Password<div className="input-with-icon"><LockKeyhole size={17}/><input type="password" autoComplete={mode==='signin'?'current-password':'new-password'} required minLength={8} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters"/></div></label>{error&&<div className="inline-error">{error}</div>}{message&&<div className="inline-success">{message}</div>}<button className="primary auth-submit" disabled={busy}>{busy?<><RefreshCw className="spin" size={17}/> Please wait…</>:mode==='signin'?'Sign in':'Create account'}</button><button type="button" className="auth-switch" onClick={()=>{setMode(mode==='signin'?'signup':'signin');setError('');setMessage('')}}>{mode==='signin'?'New to Daymark? Create an account':'Already have an account? Sign in'}</button></form></div>
 }
 
 function CloudStatus({cloud}){

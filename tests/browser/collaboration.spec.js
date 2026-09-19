@@ -102,11 +102,12 @@ test('v1.4 task editing, recurrence, note capture, search and account separation
   await page.getByRole('button',{name:'Search',exact:true}).click();
   await page.locator('.search-large input').fill('meeting');
   await expect(page.getByText('the meeting room code',{exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Sign out'}).click();
+  await page.locator('.sidebar-profile').click();
+  await page.getByRole('button',{name:'Sign out of Daymark'}).click();
   await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
   await page.getByLabel('Email').fill('herbert@example.com'); await page.getByLabel('Password').fill('test-password');
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
-  await expect(page.getByText('herbert@example.com',{exact:true})).toBeVisible();
+  await expect(page.locator('.sidebar-profile')).toContainText('Herbert');
   await page.getByRole('button',{name:'Notes',exact:true}).click();
   await expect(page.getByText('the meeting room code',{exact:true})).toHaveCount(0);
   expect(state.errors).toEqual([]);
@@ -174,11 +175,88 @@ test('notes retain checklists, attachments, pinning, theme and calendar controls
   await page.getByRole('button',{name:'Save note',exact:true}).click();
   await page.getByRole('button',{name:'Mark complete: Bring receipt',exact:true}).click();
   expect(await page.evaluate(uid=>JSON.parse(localStorage.getItem(`daymark.${uid}.notes.v1`))[0].checklist[0].done,ME)).toBe(true);
-  await page.getByRole('button',{name:'Toggle theme'}).click();
+  await page.getByRole('switch',{name:'Use dark mode'}).click();
   await expect(page.locator('.app')).toHaveClass('app dark');
   await page.getByRole('button',{name:'Calendar',exact:true}).click();
   await expect(page.locator('.calendar-shell')).toBeVisible();
   await page.getByRole('button',{name:'Contacts',exact:false}).click();
   await page.screenshot({path:'test-results/desktop-contacts.png',fullPage:true});
+  expect(state.errors).toEqual([]);
+});
+
+test('profile settings show the name, update identity and provide account security actions', async ({page})=>{
+  const state=await setup(page);
+  await expect(page.locator('.sidebar-profile')).toContainText('Raphael');
+  await expect(page.locator('.sidebar-profile')).not.toContainText('raphael@example.com');
+  await page.locator('.sidebar-profile').click();
+  await expect(page.getByRole('dialog',{name:'Profile & settings'})).toBeVisible();
+  await expect(page.getByLabel('Email',{exact:true})).toHaveValue('raphael@example.com');
+  await page.getByLabel('Name',{exact:true}).fill('Raphael McAdjei');
+  await page.getByRole('button',{name:'Save name'}).click();
+  await expect(page.locator('.settings-modal .inline-success')).toContainText('name has been updated');
+  await page.getByRole('button',{name:'Close settings'}).click();
+  await expect(page.locator('.sidebar-profile')).toContainText('Raphael McAdjei');
+  await page.locator('.sidebar-profile').click();
+  await page.getByLabel('Email',{exact:true}).fill('raphael.new@example.com');
+  await page.getByRole('button',{name:'Update email'}).click();
+  await expect(page.locator('.settings-modal .inline-success')).toContainText('Check your inbox');
+  await page.getByLabel('New password').fill('new-password-123');
+  await page.getByLabel('Confirm password').fill('new-password-123');
+  await page.getByRole('button',{name:'Change password'}).click();
+  await expect(page.locator('.settings-modal .inline-success')).toContainText('password has been changed');
+  expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.email==='raphael.new@example.com')).toBe(true);
+  expect(state.calls.some(call=>call.path.endsWith('/auth/v1/user')&&call.body?.password==='new-password-123')).toBe(true);
+  await expect(page.getByRole('button',{name:'Sign out of Daymark'})).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole('dialog',{name:'Profile & settings'})).toHaveCSS('width','390px');
+  await page.screenshot({path:'test-results/mobile-profile-settings.png',animations:'disabled'});
+  expect(state.errors).toEqual([]);
+});
+
+test('mobile task editor fits the viewport, keeps actions visible and prevents iPhone field zoom', async ({page})=>{
+  const state=await setup(page);
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('button.menu').click();
+  await page.getByRole('button',{name:'Tasks',exact:true}).click();
+  await page.getByRole('button',{name:'New task',exact:true}).click();
+  const dialog=page.getByRole('dialog').or(page.locator('.editor-modal')).first();
+  const metrics=await page.locator('.editor-modal').evaluate(element=>{
+    const box=element.getBoundingClientRect();
+    const controls=[...element.querySelectorAll('input,select,textarea')];
+    const footer=element.querySelector('.modal-foot')?.getBoundingClientRect();
+    const form=element.querySelector('.form');
+    return {left:box.left,right:box.right,top:box.top,bottom:box.bottom,minFont:Math.min(...controls.map(control=>parseFloat(getComputedStyle(control).fontSize))),footerBottom:footer?.bottom,formScrolls:form.scrollHeight>form.clientHeight,viewportMeta:document.querySelector('meta[name="viewport"]')?.content,documentWidth:document.documentElement.scrollWidth};
+  });
+  expect(metrics.left).toBeGreaterThanOrEqual(0); expect(metrics.right).toBeLessThanOrEqual(390);
+  expect(metrics.top).toBeGreaterThanOrEqual(0); expect(metrics.bottom).toBeLessThanOrEqual(845);
+  expect(metrics.minFont).toBeGreaterThanOrEqual(16); expect(metrics.footerBottom).toBeLessThanOrEqual(845);
+  expect(metrics.formScrolls).toBe(true); expect(metrics.viewportMeta).toContain('width=device-width'); expect(metrics.documentWidth).toBeLessThanOrEqual(390);
+  await page.getByLabel('Task',{exact:true}).focus();
+  await expect.poll(()=>page.evaluate(()=>visualViewport?.scale||1)).toBe(1);
+  await page.screenshot({path:'test-results/mobile-task-editor.png',fullPage:true,animations:'disabled'});
+  await expect(dialog).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test('dark colored notes retain readable text contrast', async ({page})=>{
+  const state=await setup(page);
+  await page.getByRole('button',{name:'Notes',exact:true}).click();
+  await page.getByRole('button',{name:'New note',exact:true}).click();
+  await page.getByLabel('Title',{exact:true}).fill('Dark mode reference');
+  await page.getByLabel('Note',{exact:true}).fill('Important details should stay easy to read.');
+  await page.getByLabel(/^Color/).selectOption('sand');
+  await page.getByRole('button',{name:'Save note',exact:true}).click();
+  await page.getByRole('switch',{name:'Use dark mode'}).click();
+  const card=page.locator('.note-card').filter({hasText:'Dark mode reference'});
+  const ratios=await card.evaluate(element=>{
+    const rgb=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
+    const luminance=value=>{const values=rgb(value).map(channel=>{const n=channel/255;return n<=.04045?n/12.92:Math.pow((n+.055)/1.055,2.4)});return .2126*values[0]+.7152*values[1]+.0722*values[2]};
+    const contrast=(foreground,background)=>{const a=luminance(foreground),b=luminance(background);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+    const background=getComputedStyle(element).backgroundColor;
+    return {heading:contrast(getComputedStyle(element.querySelector('h3')).color,background),body:contrast(getComputedStyle(element.querySelector('p')).color,background)};
+  });
+  expect(ratios.heading).toBeGreaterThanOrEqual(4.5); expect(ratios.body).toBeGreaterThanOrEqual(4.5);
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:'test-results/mobile-dark-note.png',fullPage:true,animations:'disabled'});
   expect(state.errors).toEqual([]);
 });
