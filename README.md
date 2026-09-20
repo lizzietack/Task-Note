@@ -1,4 +1,4 @@
-# JotRelay — Tasks & Notes v2.0
+# JotRelay — Tasks & Notes v2.0.1
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
@@ -16,6 +16,12 @@ Updated from the supplied v1.4 project. Existing quick capture, recurrence, remi
 - All collaboration permissions remain enforced in Supabase. The browser uses only the publishable key; no service-role key is included.
 
 Before deploying v2.0, run `DAYMARK_V2.0_COLLABORATION_WORKSPACE.sql` once after the v1.9 migration, deploy `supabase/functions/jotrelay-calendar-feed` with JWT verification disabled, and follow `SUPABASE_V2_SETUP.md`.
+
+### v2.0.1 collaborator attachment visibility
+
+- Collaborator task details display owner-uploaded files and report attachment-loading errors with a retry action.
+- The PWA checks for a fresh service worker whenever it starts or returns to the foreground, then reloads when an update takes control.
+- Vercel revalidates the app shell and service-worker registration files so mobile browsers receive new releases promptly.
 
 ### v1.9 lock-screen notifications
 

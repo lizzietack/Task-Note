@@ -379,7 +379,7 @@ test('account export downloads personal and collaboration data without session c
   const download=await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^jotrelay-export-\d{4}-\d{2}-\d{2}\.json$/);
   const data=JSON.parse(await readFile(await download.path(),'utf8'));
-  expect(data.appVersion).toBe('2.0.0');
+  expect(data.appVersion).toBe('2.0.1');
   expect(data.account.id).toBe(ME);
   expect(data.tasks.some(task=>task.id==='owned-task')).toBe(true);
   expect(data.collaboration.assignments.some(assignment=>assignment.id==='a2')).toBe(true);
@@ -493,5 +493,27 @@ test('v2 shared lists assign multiple people and expose files, mentions, calenda
   await expect(page.getByRole('dialog',{name:'Privacy Policy'})).toBeVisible();
   await page.getByRole('button',{name:'Close legal document'}).click();
   await expect(page).toHaveURL(/\/$/);
+  expect(state.errors).toEqual([]);
+});
+
+test('an accepted collaborator can see and open an attachment uploaded by the task owner', async ({ page }) => {
+  const state = await setup(page, OTHER);
+  state.db.task_attachments.push({
+    id: 'shared-file-1',
+    task_id: 'owned-task',
+    owner_id: ME,
+    uploader_id: ME,
+    name: 'supplier-receipt.pdf',
+    mime_type: 'application/pdf',
+    size_bytes: 4096,
+    storage_path: `${ME}/tasks/owned-task/shared-file-1-supplier-receipt.pdf`,
+    created_at: '2026-09-19T08:01:00Z',
+  });
+
+  await page.getByRole('button', { name: 'Assigned to me', exact: false }).click();
+  await page.getByRole('button', { name: 'Review supplier payment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toBeVisible();
+  await expect(page.getByText('supplier-receipt.pdf', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open', exact: true })).toHaveAttribute('href', /shared-file-1-supplier-receipt\.pdf\?token=test$/);
   expect(state.errors).toEqual([]);
 });

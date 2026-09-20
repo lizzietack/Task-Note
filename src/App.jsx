@@ -362,7 +362,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
     const payload = {
       format: 'daymark-account-export',
       schemaVersion: 1,
-      appVersion: '2.0.0',
+      appVersion: '2.0.1',
       exportedAt: new Date().toISOString(),
       account: {
         id: auth.session.user.id,
