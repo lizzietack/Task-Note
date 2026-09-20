@@ -21,11 +21,12 @@
 - The Web Push tables use per-user RLS, the private delivery queue has no client policy, and the worker can claim or finish jobs only with the Vault-backed delivery secret.
 - The frontend and Edge Function use only Supabase publishable/anon credentials. No service-role key is used.
 
-## Not exercised against the live project
+## Live deployment
 
-No live account credentials or migration access were supplied. The browser suite uses mocked Auth, REST, Storage and Realtime responses and never writes to the live database.
-
-Run `DAYMARK_V2.0_COLLABORATION_WORKSPACE.sql` in the existing project after the v1.9 migration and deploy the public calendar-feed Edge Function before deploying the frontend. Then follow `SUPABASE_V2_SETUP.md` with two test accounts and a physical phone to confirm locked-screen mention delivery.
+- The v2.0 collaboration migration was applied successfully to Supabase project `fyaluzjncqrmtvfbyend`.
+- The `jotrelay-calendar-feed` Edge Function was deployed with legacy JWT verification disabled. A request without an authorization header reached the function and an invalid feed token returned the expected `404 Calendar feed not found` response.
+- Git commit `13c3823` was deployed successfully to Vercel, and the production Privacy Policy and Terms of Service routes were verified at `www.getjotrelay.com`.
+- The browser suite uses mocked Auth, REST, Storage and Realtime responses and never writes to the live database. Complete the final two-account workflow and locked-screen mention-notification checks on physical phones as described in `SUPABASE_V2_SETUP.md`.
 
 The notification worker now handles both the existing optional Resend queue and Web Push. Existing Resend settings remain compatible; Web Push adds the VAPID settings described in `SUPABASE_V1.9_SETUP.md`.
 
