@@ -523,6 +523,14 @@ test('sign-in screen offers Google OAuth and preserves the JotRelay return URL',
   const state = await setup(page);
   await page.locator('.sidebar-profile').click();
   await page.getByRole('button', { name: 'Sign out of JotRelay' }).click();
+  await expect(page).toHaveTitle('JotRelay — Shared Tasks, Notes & Team Collaboration');
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://www.getjotrelay.com/');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', /share lists, assign work/i);
+  await expect(page.getByRole('link', { name: 'Privacy Policy', exact: true })).toHaveAttribute('href', '/privacy');
+  await page.getByRole('link', { name: 'Privacy Policy', exact: true }).click();
+  await expect(page).toHaveTitle('Privacy Policy | JotRelay');
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://www.getjotrelay.com/privacy');
+  await page.getByRole('button', { name: 'Close legal document' }).click();
   const google = page.getByRole('button', { name: 'Continue with Google', exact: true });
   await expect(google).toBeVisible();
   await Promise.all([
@@ -533,4 +541,24 @@ test('sign-in screen offers Google OAuth and preserves the JotRelay return URL',
   expect(target.searchParams.get('provider')).toBe('google');
   expect(target.searchParams.get('redirect_to')).toBe('http://127.0.0.1:5174/');
   expect(state.errors).toEqual([]);
+});
+
+test('public crawler files and structured data describe JotRelay', async ({ page, request }) => {
+  const robots = await request.get('/robots.txt');
+  expect(robots.ok()).toBe(true);
+  expect(await robots.text()).toContain('Sitemap: https://www.getjotrelay.com/sitemap.xml');
+  const sitemap = await request.get('/sitemap.xml');
+  expect(sitemap.ok()).toBe(true);
+  const sitemapText = await sitemap.text();
+  expect(sitemapText).toContain('<loc>https://www.getjotrelay.com/</loc>');
+  expect(sitemapText).toContain('<loc>https://www.getjotrelay.com/privacy</loc>');
+  await page.goto('/');
+  const structuredData = JSON.parse(await page.locator('script[type="application/ld+json"]').textContent());
+  expect(structuredData['@type']).toBe('SoftwareApplication');
+  expect(structuredData.name).toBe('JotRelay');
+  expect(structuredData.offers.price).toBe('0');
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', 'https://www.getjotrelay.com/jotrelay-social.png');
+  await page.goto('/terms');
+  await expect(page).toHaveTitle('Terms of Service | JotRelay');
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://www.getjotrelay.com/terms');
 });

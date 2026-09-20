@@ -1,6 +1,13 @@
-# JotRelay — Tasks & Notes v2.1
+# JotRelay — Tasks & Notes v2.1.1
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
+
+### v2.1.1 search and sharing metadata
+
+- The public JotRelay sign-in page now describes shared lists, assignments, comments, attachments, cross-device sync and offline access with semantic page structure.
+- Canonical URLs, Open Graph and Twitter cards, SoftwareApplication structured data, a social preview image and an Apple touch icon improve search and link previews.
+- `robots.txt` and `sitemap.xml` expose the public home, Privacy Policy and Terms of Service pages to search engines.
+- Privacy and Terms have distinct titles, descriptions and canonical URLs, and their public links are crawlable.
 
 ### v2.1 quiet collaboration and Google sign-in
 

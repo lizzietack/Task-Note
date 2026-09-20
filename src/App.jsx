@@ -14,6 +14,7 @@ import { AccountSettings, ProfileAvatar, ThemeSwitch, accountDisplayName } from 
 import { LegalDocument } from './components/Legal';
 import { syncPushSubscription } from './lib/pushNotifications';
 import { calendarFeedUrl, downloadCalendar } from './lib/calendar';
+import { useSeoMetadata } from './lib/seo';
 
 const CATEGORIES = [
   { name: 'Personal', color: '#0F766E' },
@@ -104,6 +105,7 @@ export default function App(){
   const auth = useDaymarkAuth();
   const [passwordReadyUser, setPasswordReadyUser] = useState(null);
   const [publicLegal, setPublicLegal] = useState(legalKindFromPath);
+  useSeoMetadata(publicLegal);
   useEffect(()=>{const route=()=>setPublicLegal(legalKindFromPath());window.addEventListener('popstate',route);return()=>window.removeEventListener('popstate',route)},[]);
   const openPublicLegal=kind=>{setLegalPath(kind);setPublicLegal(kind)};
   const closePublicLegal=()=>{setLegalPath('');setPublicLegal('')};
@@ -146,6 +148,7 @@ function Workspace({auth,passwordSetupRequired,onPasswordSetupComplete}){
   const [assignedDetail, setAssignedDetail] = useState(null);
   const [accountSettings, setAccountSettings] = useState(false);
   const [legalDocument, setLegalDocument] = useState(legalKindFromPath);
+  useSeoMetadata(legalDocument);
   const [notice, setNotice] = useState(null);
   const [pushNotificationId, setPushNotificationId] = useState(() => new URL(window.location.href).searchParams.get('jotrelay_notification') || '');
   const seenNotifications = useRef(new Set());
@@ -750,7 +753,32 @@ function AuthScreen({signIn,signInWithGoogle,signUp,requestPasswordReset,onLegal
   const submit=async e=>{e.preventDefault();setBusy(true);setError('');setMessage('');try{const result=mode==='signin'?await signIn(email.trim(),password):await signUp(email.trim(),password,name);const {data,error}=result;if(error)throw error;if(mode==='signup'&&!data?.session)setMessage('Account created. Check your email to confirm your address, then sign in.');}catch(err){setError(err?.message||'Could not continue. Please try again.');}finally{setBusy(false)}};
   const google=async()=>{setBusy(true);setError('');setMessage('');try{const {error}=await signInWithGoogle();if(error)throw error;}catch(err){setError(err?.message||'Google sign-in could not start. Please try again.');setBusy(false)}};
   const resetPassword=async()=>{setBusy(true);setError('');setMessage('');try{await requestPasswordReset(email);setMessage('Check your email for a secure link to set your JotRelay password.');}catch(err){setError(err?.message||'Could not send the password email.');}finally{setBusy(false)}};
-  return <div className="auth-shell"><div className="auth-panel"><div className="auth-brand"><div className="brand-mark large"><CheckCircle2 size={28}/></div><div><strong>JotRelay</strong><span>Tasks & notes</span></div></div><div className="auth-copy"><span className="eyebrow">YOUR DAY, EVERYWHERE</span><h1>Remember what matters. Pick up where you left off.</h1><p>Sign in to keep tasks, notes and attachments synced across web, Android and iPhone while JotRelay remains usable when your connection drops.</p><div className="auth-benefits"><span><Cloud size={17}/> Cross-device sync</span><span><LockKeyhole size={17}/> Private by account</span><span><WifiOff size={17}/> Offline-friendly</span></div></div></div><form className="auth-card" onSubmit={submit}><span className="eyebrow">{mode==='signin'?'WELCOME BACK':'CREATE ACCOUNT'}</span><h2>{mode==='signin'?'Sign in to JotRelay':'Start using JotRelay'}</h2><p>{mode==='signin'?'Your local JotRelay data will be safely merged into your account after sign-in.':'Use the same account on every device.'}</p><button type="button" className="google-auth" disabled={busy} onClick={google}><GoogleMark/> Continue with Google</button><div className="auth-divider"><span>or continue with email</span></div>{mode==='signup'&&<label>Full name<div className="input-with-icon"><Users size={17}/><input type="text" autoComplete="name" required minLength={2} maxLength={80} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/></div></label>}<label>Email<div className="input-with-icon"><Mail size={17}/><input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></div></label><label>Password<div className="input-with-icon"><LockKeyhole size={17}/><input type="password" autoComplete={mode==='signin'?'current-password':'new-password'} required minLength={8} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters"/></div></label>{error&&<div className="inline-error">{error}</div>}{message&&<div className="inline-success">{message}</div>}<button className="primary auth-submit" disabled={busy}>{busy?<><RefreshCw className="spin" size={17}/> Please wait…</>:mode==='signin'?'Sign in':'Create account'}</button>{mode==='signin'&&<button type="button" className="auth-switch" disabled={busy} onClick={resetPassword}>Forgot or never created a password?</button>}<button type="button" className="auth-switch" onClick={()=>{setMode(mode==='signin'?'signup':'signin');setError('');setMessage('')}}>{mode==='signin'?'New to JotRelay? Create an account':'Already have an account? Sign in'}</button><div className="auth-legal"><button type="button" onClick={()=>onLegal('privacy')}>Privacy Policy</button><span>·</span><button type="button" onClick={()=>onLegal('terms')}>Terms of Service</button></div></form></div>
+  return <main className="auth-shell">
+    <div className="auth-panel">
+      <div className="auth-brand"><div className="brand-mark large"><CheckCircle2 size={28}/></div><div><strong>JotRelay</strong><span>Tasks & notes</span></div></div>
+      <div className="auth-copy">
+        <span className="eyebrow">YOUR DAY, EVERYWHERE</span>
+        <h1>Remember what matters. Move work forward together.</h1>
+        <p>Plan personal work, share task lists, assign tasks, exchange comments and attachments, and stay in sync across web, Android and iPhone—even when your connection drops.</p>
+        <div className="auth-benefits"><span><Users size={17}/> Shared task lists</span><span><Send size={17}/> Real-time teamwork</span><span><WifiOff size={17}/> Offline-friendly</span></div>
+      </div>
+    </div>
+    <form className="auth-card" onSubmit={submit}>
+      <span className="eyebrow">{mode==='signin'?'WELCOME BACK':'CREATE ACCOUNT'}</span>
+      <h2>{mode==='signin'?'Sign in to JotRelay':'Start using JotRelay'}</h2>
+      <p>{mode==='signin'?'Your local JotRelay data will be safely merged into your account after sign-in.':'Use the same account on every device.'}</p>
+      <button type="button" className="google-auth" disabled={busy} onClick={google}><GoogleMark/> Continue with Google</button>
+      <div className="auth-divider"><span>or continue with email</span></div>
+      {mode==='signup'&&<label>Full name<div className="input-with-icon"><Users size={17}/><input type="text" autoComplete="name" required minLength={2} maxLength={80} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"/></div></label>}
+      <label>Email<div className="input-with-icon"><Mail size={17}/><input type="email" autoComplete="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></div></label>
+      <label>Password<div className="input-with-icon"><LockKeyhole size={17}/><input type="password" autoComplete={mode==='signin'?'current-password':'new-password'} required minLength={8} value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters"/></div></label>
+      {error&&<div className="inline-error">{error}</div>}{message&&<div className="inline-success">{message}</div>}
+      <button className="primary auth-submit" disabled={busy}>{busy?<><RefreshCw className="spin" size={17}/> Please wait…</>:mode==='signin'?'Sign in':'Create account'}</button>
+      {mode==='signin'&&<button type="button" className="auth-switch" disabled={busy} onClick={resetPassword}>Forgot or never created a password?</button>}
+      <button type="button" className="auth-switch" onClick={()=>{setMode(mode==='signin'?'signup':'signin');setError('');setMessage('')}}>{mode==='signin'?'New to JotRelay? Create an account':'Already have an account? Sign in'}</button>
+      <div className="auth-legal"><a href="/privacy" onClick={event=>{event.preventDefault();onLegal('privacy')}}>Privacy Policy</a><span>·</span><a href="/terms" onClick={event=>{event.preventDefault();onLegal('terms')}}>Terms of Service</a></div>
+    </form>
+  </main>
 }
 
 function PasswordSetupGate({email,updatePassword,onComplete}){

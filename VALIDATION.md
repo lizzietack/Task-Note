@@ -1,9 +1,9 @@
-# v2.1 validation — 20 September 2026
+# v2.1.1 validation — 21 September 2026
 
 ## Passed
 
 - `npm test`: all 11 unit tests passed. Coverage includes assignment permissions and transitions, comment eligibility, accepted-contact direction, RPC names and arguments, public email invitations, idempotent mentions, calendar escaping, notification updates, pagination and account-isolated cache migration.
-- `npm run test:browser`: all 25 mocked browser scenarios passed in one complete headless Microsoft Edge run.
+- `npm run test:browser`: all 26 mocked browser scenarios passed in one complete headless Microsoft Edge run.
   - Existing-account requests and invitations to unregistered email addresses.
   - Secure invitation claim, reusable-password setup and later sign-in recovery.
   - Contact acceptance, removal, active-assignment revocation and reconnection.
@@ -19,6 +19,8 @@
   - An accepted collaborator sees and can open an attachment uploaded by the task owner.
   - Healthy collaboration runs without a dashboard status row; offline and queued changes remain visible.
   - Google OAuth starts from the authentication screen and preserves the approved JotRelay return URL.
+  - Search titles, descriptions and canonical URLs update for the public home, Privacy Policy and Terms of Service routes.
+  - `robots.txt`, `sitemap.xml`, SoftwareApplication structured data and the Open Graph social image are present and valid for the production build.
 - `npm run build`: successful Vite production build and PWA service-worker generation. The generated worker imports `push-sw.js`, and the manifest includes a stable app ID for installed-app notification identity.
 - The additive migration preserves all legacy notification values and collaboration rows. Removing a shared-list member cancels the member's active assignments for tasks in that list so access is revoked immediately.
 - The Web Push tables use per-user RLS, the private delivery queue has no client policy, and the worker can claim or finish jobs only with the Vault-backed delivery secret.

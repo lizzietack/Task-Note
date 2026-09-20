@@ -13,7 +13,7 @@ export default defineConfig({
         name: 'JotRelay — Tasks & Notes',
         short_name: 'JotRelay',
         id: '/',
-        description: 'A calm, offline-first everyday task and notes organizer.',
+        description: 'Shared tasks, notes and real-time collaboration across every device.',
         theme_color: '#0f766e',
         background_color: '#f5f7f6',
         display: 'standalone',
