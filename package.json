@@ -1,7 +1,7 @@
 {
   "name": "jotrelay-tasks-notes",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.1.0",
   "type": "module",
   "description": "JotRelay is a calm, offline-first everyday task and notes organizer.",
   "scripts": {

@@ -144,7 +144,7 @@ test('an earlier invitee can request a password link from the sign-in screen', a
   const state = await setup(page);
   await page.locator('.sidebar-profile').click();
   await page.getByRole('button',{name:'Sign out of JotRelay'}).click();
-  await page.getByLabel('Email').fill('raphael@example.com');
+  await page.getByRole('textbox', { name: 'Email', exact: true }).fill('raphael@example.com');
   await page.getByRole('button',{name:'Forgot or never created a password?'}).click();
   await expect(page.getByText('Check your email for a secure link',{exact:false})).toBeVisible();
   const recovery=state.calls.find(call=>call.path.endsWith('/auth/v1/recover'));
@@ -250,6 +250,7 @@ test('v1.4 task editing, recurrence, note capture, search and account separation
 
 test('mobile layout and offline collaboration preserve personal editing', async ({page})=>{
   const state=await setup(page);
+  await expect(page.locator('.collab-health')).toHaveCount(0);
   await page.setViewportSize({width:390,height:844});
   await page.locator('button.menu').click();
   await page.getByRole('button',{name:'Assigned to me',exact:false}).click();
@@ -379,7 +380,7 @@ test('account export downloads personal and collaboration data without session c
   const download=await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^jotrelay-export-\d{4}-\d{2}-\d{2}\.json$/);
   const data=JSON.parse(await readFile(await download.path(),'utf8'));
-  expect(data.appVersion).toBe('2.0.1');
+  expect(data.appVersion).toBe('2.1.0');
   expect(data.account.id).toBe(ME);
   expect(data.tasks.some(task=>task.id==='owned-task')).toBe(true);
   expect(data.collaboration.assignments.some(assignment=>assignment.id==='a2')).toBe(true);
@@ -515,5 +516,21 @@ test('an accepted collaborator can see and open an attachment uploaded by the ta
   await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toBeVisible();
   await expect(page.getByText('supplier-receipt.pdf', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open', exact: true })).toHaveAttribute('href', /shared-file-1-supplier-receipt\.pdf\?token=test$/);
+  expect(state.errors).toEqual([]);
+});
+
+test('sign-in screen offers Google OAuth and preserves the JotRelay return URL', async ({ page }) => {
+  const state = await setup(page);
+  await page.locator('.sidebar-profile').click();
+  await page.getByRole('button', { name: 'Sign out of JotRelay' }).click();
+  const google = page.getByRole('button', { name: 'Continue with Google', exact: true });
+  await expect(google).toBeVisible();
+  await Promise.all([
+    page.waitForURL(url => url.hostname === 'daymark-test.supabase.co' && url.pathname === '/auth/v1/authorize'),
+    google.click(),
+  ]);
+  const target = new URL(page.url());
+  expect(target.searchParams.get('provider')).toBe('google');
+  expect(target.searchParams.get('redirect_to')).toBe('http://127.0.0.1:5174/');
   expect(state.errors).toEqual([]);
 });

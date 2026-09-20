@@ -18,8 +18,10 @@ function useAction() {
 }
 
 export function CollaborationHealth({ c }) {
+  const healthy = c.online && !c.error && !c.outbox.length && (c.loading || c.realtime === 'live');
+  if (healthy) return null;
   return <div className="collab-health" role="status">
-    {!c.online ? `Offline — ${c.outbox.length ? `${c.outbox.length} collaboration ${c.outbox.length === 1 ? 'change is' : 'changes are'} safely queued.` : 'collaboration will refresh when you reconnect.'}` : c.error ? `Collaboration: ${c.error}` : c.outbox.length ? `${c.outbox.length} collaboration ${c.outbox.length === 1 ? 'change is' : 'changes are'} waiting to sync.` : c.loading ? 'Loading collaboration…' : c.realtime === 'live' ? 'Collaboration connected' : 'Reconnecting live updates — checking every 30 seconds.'}
+    {!c.online ? `Offline — ${c.outbox.length ? `${c.outbox.length} collaboration ${c.outbox.length === 1 ? 'change is' : 'changes are'} safely queued.` : 'collaboration will refresh when you reconnect.'}` : c.error ? `Collaboration: ${c.error}` : c.outbox.length ? `${c.outbox.length} collaboration ${c.outbox.length === 1 ? 'change is' : 'changes are'} waiting to sync.` : 'Reconnecting live updates — checking every 30 seconds.'}
     {c.online && <button className="text-btn" onClick={c.outbox.length ? c.flushOutbox : c.refresh}>{c.outbox.length ? 'Retry now' : 'Refresh'}</button>}
   </div>;
 }

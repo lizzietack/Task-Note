@@ -204,6 +204,6 @@ export async function setup(page, userId = ME) {
     return bad('Unexpected request');
   });
   const errors=[]; page.on('pageerror', error=>errors.push(error.message));
-  await page.goto('/'); await expect(page.getByText('Collaboration connected', {exact:false})).toBeVisible();
+  await page.goto('/'); await expect(page.getByRole('heading', { name: 'Today', exact: true, level: 1 })).toBeVisible();
   return { db, calls, emit, errors, authMetadata, failNextAssignment: () => { failAssign=true; }, addEmailInvite: invite => db.daymark_email_invites.push({id:`incoming-${db.daymark_email_invites.length}`,status:'pending',created_at:now,expires_at:'2026-10-03T08:00:00Z',...invite}) };
 }

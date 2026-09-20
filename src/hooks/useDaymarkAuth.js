@@ -14,6 +14,14 @@ export function useDaymarkAuth() {
     return () => { active = false; data.subscription.unsubscribe(); };
   }, []);
   const signIn = useCallback((email, password) => supabase.auth.signInWithPassword({ email, password }), []);
+  const signInWithGoogle = useCallback(() => {
+    const redirect = new URL(window.location.href);
+    redirect.hash = '';
+    return supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: redirect.toString() },
+    });
+  }, []);
   const signUp = useCallback((email, password, displayName) => supabase.auth.signUp({
     email,
     password,
@@ -85,5 +93,5 @@ export function useDaymarkAuth() {
     const { error: authError } = await supabase.auth.updateUser({ data: { avatar_url: null } });
     if (authError) throw authError;
   }, [session?.user?.id]);
-  return { session, authLoading, configured: isSupabaseConfigured, signIn, signUp, signOut, updateDisplayName, updateEmail, updatePassword, updateTimezone, requestPasswordReset, updateAvatar, removeAvatar };
+  return { session, authLoading, configured: isSupabaseConfigured, signIn, signInWithGoogle, signUp, signOut, updateDisplayName, updateEmail, updatePassword, updateTimezone, requestPasswordReset, updateAvatar, removeAvatar };
 }

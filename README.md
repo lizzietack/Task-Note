@@ -1,6 +1,13 @@
-# JotRelay — Tasks & Notes v2.0.1
+# JotRelay — Tasks & Notes v2.1
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
+
+### v2.1 quiet collaboration and Google sign-in
+
+- Realtime collaboration and the 30-second recovery check continue in the background. The dashboard status row appears only when JotRelay is offline, reconnecting, has queued work, or needs attention.
+- The sign-in and sign-up screens include **Continue with Google** while retaining email and password access.
+- New Google-authenticated profiles use the verified Google name and optional profile image.
+- Run `JOTRELAY_V2.1_GOOGLE_AUTH.sql`, then follow `SUPABASE_V2.1_SETUP.md` to enable the Google provider without exposing its client secret.
 
 ## What's new
 
