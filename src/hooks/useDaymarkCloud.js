@@ -14,7 +14,7 @@ export function taskToRow(task, userId) {
   return {
     id: idText(task.id), user_id: userId, title: task.title || '', completed: Boolean(task.completed),
     date: task.date || null, time: task.time || null, priority: task.priority || 'medium',
-    category: task.category || 'Personal', list_name: task.list || 'inbox', repeat_rule: task.repeat || 'none',
+    category: task.category || 'Personal', list_name: task.list || 'inbox', repeat_rule: task.repeat || 'none', shared_list_id: task.sharedListId || null,
     reminder: task.reminder || 'None', note: task.note || '', subtasks: task.subtasks || [], source: task.source || { type: 'manual' },
     recurring_from: task.recurringFrom != null ? idText(task.recurringFrom) : null,
     created_at: msToIso(task.createdAt || Date.now()), updated_at: msToIso(task.updatedAt || task.createdAt || Date.now()),
@@ -24,7 +24,7 @@ export function taskToRow(task, userId) {
 function rowToTask(row) {
   return {
     id: row.id, title: row.title, completed: row.completed, date: row.date || '', time: row.time ? String(row.time).slice(0,5) : '',
-    priority: row.priority, category: row.category, list: row.list_name, repeat: row.repeat_rule, reminder: row.reminder,
+    priority: row.priority, category: row.category, list: row.list_name, repeat: row.repeat_rule, sharedListId: row.shared_list_id || '', reminder: row.reminder,
     note: row.note || '', subtasks: row.subtasks || [], source: row.source || { type: 'manual' }, recurringFrom: row.recurring_from || undefined,
     createdAt: isoToMs(row.created_at), updatedAt: isoToMs(row.updated_at), completedAt: isoToMs(row.completed_at),
   };

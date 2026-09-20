@@ -28,12 +28,13 @@ export function ThemeSwitch({ dark, setDark, compact = false }) {
   </button>;
 }
 
-export function AccountSettings({ auth, collaboration, profile, dark, setDark, onExport, onSaved, onClose }) {
+export function AccountSettings({ auth, collaboration, profile, dark, setDark, onExport, onDeleteAccount, onLegal, onSaved, onClose }) {
   const dialogRef = useRef(null);
   const photoRef = useRef(null);
   const [name, setName] = useState(() => accountDisplayName(profile, auth.session.user));
   const [email, setEmail] = useState(auth.session.user.email || '');
   const [password, setPassword] = useState(''), [confirm, setConfirm] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const [timezone, setTimezone] = useState(profile?.timezone || detectedTimezone);
   const [preferences, setPreferences] = useState(() => ({ ...collaboration.preferences }));
@@ -137,7 +138,9 @@ export function AccountSettings({ auth, collaboration, profile, dark, setDark, o
           <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => run('export', onExport, 'Your JotRelay export has been downloaded.')}><Download size={16}/>{busy === 'export' ? 'Preparing export…' : 'Download my data'}</button>
           <small className="field-help">The JSON export includes tasks, notes and collaboration records. Attachment details are included, but the files themselves remain in secure storage.</small>
         </SettingsSection>
+        <SettingsSection title="Legal" description="Read how JotRelay handles your information and the rules for using the service."><div className="photo-actions"><button type="button" className="text-btn" onClick={() => onLegal('privacy')}>Privacy Policy</button><button type="button" className="text-btn" onClick={() => onLegal('terms')}>Terms of Service</button></div></SettingsSection>
         <SettingsSection title="Appearance" description="Use the theme that feels most comfortable."><ThemeSwitch dark={dark} setDark={setDark}/></SettingsSection>
+        <SettingsSection title="Delete account" description="Permanently remove your JotRelay account, personal content, shared-list ownership and stored files."><label>Type DELETE to confirm<input value={deleteConfirmation} autoComplete="off" onChange={event => setDeleteConfirmation(event.target.value)} placeholder="DELETE"/></label><button type="button" className="danger-button" disabled={Boolean(busy) || deleteConfirmation !== 'DELETE'} onClick={() => run('delete-account', () => onDeleteAccount(deleteConfirmation), 'Your account has been deleted.')}>{busy === 'delete-account' ? 'Deleting…' : 'Delete my account permanently'}</button><small className="field-help">This cannot be undone. Download your data first if you need a copy.</small></SettingsSection>
         <section className="settings-signout"><div><h3>Sign out</h3><p>Your synced data remains available when you sign in again.</p></div><button type="button" className="signout-button" disabled={Boolean(busy)} onClick={() => run('signout', auth.signOut, 'Signed out.')}>Sign out of JotRelay</button></section>
       </div>
     </div>

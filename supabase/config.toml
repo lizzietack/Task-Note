@@ -1,2 +1,5 @@
 [functions.daymark-deliver-notifications]
 verify_jwt = false
+
+[functions.jotrelay-calendar-feed]
+verify_jwt = false

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assignmentActions, canComment, acceptedContacts, collaborationApi, allRows } from '../src/lib/collaboration.js';
 import { migrateAccountCache } from '../src/lib/accountCache.js';
+import { buildCalendar } from '../src/lib/calendar.js';
 
 test('only the pending assignee can respond; only accepted assignments can complete', () => {
   const row = { id: 'a', owner_id: 'owner', assignee_id: 'assignee', status: 'pending' };
@@ -77,7 +78,18 @@ test('comments validate length and use an idempotent client nonce', async () => 
   const api = collaborationApi({ rpc: async (name,args) => { calls.push({name,args}); return {data:'comment-id',error:null}; } }, 'me');
   assert.throws(() => api.addComment('t', '   ')); assert.throws(() => api.addComment('t', 'x'.repeat(2001)));
   await api.addComment(42, '  Progress update  ', '11111111-1111-4111-8111-111111111111');
-  assert.deepEqual(calls[0], {name:'daymark_add_task_comment',args:{target_task:'42',comment_body:'Progress update',request_nonce:'11111111-1111-4111-8111-111111111111'}});
+  assert.deepEqual(calls[0], {name:'daymark_add_task_comment_v2',args:{target_task:'42',comment_body:'Progress update',request_nonce:'11111111-1111-4111-8111-111111111111',mentioned_users:[]}});
+});
+test('comment mentions are deduplicated and calendar exports escape user content', async () => {
+  const calls=[];
+  const api=collaborationApi({rpc:async(name,args)=>{calls.push({name,args});return {data:'comment-id',error:null};}},'me');
+  await api.addComment('task-1','Hello @Nana',['nana','nana','owner'],'11111111-1111-4111-8111-111111111111');
+  assert.deepEqual(calls[0].args.mentioned_users,['nana','owner']);
+  const calendar=buildCalendar([{id:'task,1',title:'Plan; review',note:'Line one\nLine two',date:'2026-09-20',time:'10:30',completed:false,updatedAt:'2026-09-20T00:00:00Z'}]);
+  assert.match(calendar,/UID:task\\,1@getjotrelay\.com/);
+  assert.match(calendar,/SUMMARY:Plan\\; review/);
+  assert.match(calendar,/DESCRIPTION:Line one\\nLine two/);
+  assert.match(calendar,/DTSTART:20260920T103000/);
 });
 test('read notifications are scoped to the authenticated recipient and unread rows', async () => {
   const calls = [];

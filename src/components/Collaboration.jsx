@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Activity, Bell, Check, MessageCircle, RefreshCw, Send, UserMinus, Users, WifiOff, X } from 'lucide-react';
+import { Activity, Bell, Check, File, ListTree, MessageCircle, Paperclip, RefreshCw, Send, Trash2, UserMinus, Users, WifiOff, X } from 'lucide-react';
 import { assignmentActions, canComment, personName } from '../lib/collaboration';
 import { ProfileAvatar } from './AccountSettings';
 
@@ -72,13 +72,43 @@ export function ContactsView({ c }) {
   </>;
 }
 
-export function AssignmentPicker({ c, taskId, value, onChange, inviteEmail, onInviteEmail, disabled }) {
+export function AssignmentPicker({ c, taskId, values, onChange, inviteEmails, onInviteEmails, sharedListId, onSharedList, disabled }) {
   const used = new Set(c.assignments.filter(a => String(a.task_id) === String(taskId) && ['pending', 'accepted'].includes(a.status)).map(a => a.assignee_id));
   const choices = c.contacts.filter(id => !used.has(id));
-  return <fieldset className="assignment-picker"><legend>Share this task (optional)</legend><label>Assign to a contact<select value={value} onChange={e => { onChange(e.target.value); if (e.target.value) onInviteEmail(''); }} disabled={disabled || !c.available || Boolean(inviteEmail)}>
-    <option value="">{taskId ? 'No new assignment' : 'Just me'}</option>
-    {choices.map(id => <option key={id} value={id}>{personName(c.profiles[id])}{c.profiles[id]?.email ? ` · ${c.profiles[id].email}` : ''}</option>)}
-  </select></label><div className="assign-divider"><span>or</span></div><label>Invite by email<input type="email" value={inviteEmail} onChange={e => { onInviteEmail(e.target.value); if (e.target.value) onChange(''); }} disabled={disabled || !c.available || Boolean(value)} placeholder="person@example.com"/></label><small className="field-help">{!c.online ? 'Reconnect to share a task.' : 'Accepted contacts receive it in-app. Anyone else can receive a secure join link by email, then accept or decline the task.'}</small></fieldset>;
+  const ownedLists = c.sharedLists.filter(list => list.owner_id === c.uid);
+  const toggle = id => onChange(values.includes(id) ? values.filter(value => value !== id) : [...values, id]);
+  return <fieldset className="assignment-picker"><legend>Collaborators (optional)</legend>
+    {ownedLists.length > 0 && <label>Shared list<select value={sharedListId} onChange={event => onSharedList(event.target.value)} disabled={disabled || !c.available}><option value="">No shared list</option>{ownedLists.map(list => <option key={list.id} value={list.id}>{list.name}</option>)}</select></label>}
+    <div className="contact-picker" role="group" aria-label="Assign contacts">{choices.length ? choices.map(id => <label className="contact-option" key={id}><input type="checkbox" checked={values.includes(id)} onChange={() => toggle(id)} disabled={disabled || !c.available}/><ProfileAvatar profile={c.profiles[id]} small/><span><strong>{personName(c.profiles[id])}</strong><small>{c.profiles[id]?.email}</small></span></label>) : <small className="field-help">{taskId ? 'Every available contact is already assigned.' : 'Add accepted contacts to assign this task.'}</small>}</div>
+    <label>Invite additional people by email<textarea value={inviteEmails} onChange={e => onInviteEmails(e.target.value)} disabled={disabled || !c.available} placeholder="person@example.com, teammate@example.com"/></label><small className="field-help">Separate addresses with commas. Accepted contacts and every active member of the selected shared list receive their own assignment.</small>
+  </fieldset>;
+}
+
+export function SharedListsView({ c, tasks, onOpen }) {
+  const [editing, setEditing] = useState(null), [name, setName] = useState(''), [color, setColor] = useState('mint'), [members, setMembers] = useState([]), [message, setMessage] = useState('');
+  const { busy, error, run } = useAction();
+  const owned = c.sharedLists.filter(list => list.owner_id === c.uid), joined = c.sharedLists.filter(list => list.owner_id !== c.uid);
+  const begin = (list, clearMessage = true) => { setEditing(list); setName(list?.name || ''); setColor(list?.color || 'mint'); setMembers(list ? c.sharedListMembers.filter(row => row.list_id === list.id).map(row => row.user_id) : []); if (clearMessage) setMessage(''); };
+  const save = event => { event.preventDefault(); run(async () => { const success = editing ? 'Shared list updated.' : 'Shared list created.'; await c.act('saveSharedList', editing?.id || null, name, members, color); begin(null, false); setMessage(success); }); };
+  const card = list => {
+    const listMembers = c.sharedListMembers.filter(row => row.list_id === list.id);
+    const listTasks = [...tasks, ...c.sharedTasks].filter(task => task.shared_list_id === list.id || task.sharedListId === list.id);
+    return <article className={`shared-list-card ${list.color}`} key={list.id}><div className="collab-card-head"><div><small>{list.owner_id === c.uid ? 'YOU OWN THIS LIST' : `OWNED BY ${personName(c.profiles[list.owner_id])}`}</small><h2>{list.name}</h2></div><span>{listMembers.length} people</span></div><div className="shared-list-people">{listMembers.map(row => <span key={row.user_id}><ProfileAvatar profile={c.profiles[row.user_id]} small/>{personName(c.profiles[row.user_id])}</span>)}</div><div className="shared-list-tasks">{listTasks.slice(0, 5).map(task => <button key={`${task.user_id || c.uid}:${task.id}`} className="text-btn" onClick={() => onOpen?.(task)}>{task.title}</button>)}{!listTasks.length && <small>No tasks in this list yet.</small>}</div>{list.owner_id === c.uid && <div className="collab-actions"><button className="secondary" onClick={() => begin(list)}>Edit members</button><button className="text-btn danger-text" onClick={() => { if (window.confirm(`Delete “${list.name}”? Tasks remain in their owners’ accounts.`)) run(() => c.act('deleteSharedList', list.id)); }}><Trash2 size={14}/> Delete</button></div>}</article>;
+  };
+  return <><div className="page-head"><div><span className="eyebrow">WORKSPACES</span><h1>Shared lists</h1><p>Group related tasks and keep the same collaborators involved.</p></div><ListTree size={28}/></div>
+    <form className="collab-invite shared-list-editor" onSubmit={save}><label>{editing ? 'Edit list' : 'Create a shared list'}<input value={name} maxLength={80} required onChange={event => setName(event.target.value)} placeholder="Launch plan"/></label><label>Color<select value={color} onChange={event => setColor(event.target.value)}>{['mint','blue','sand','rose','plain'].map(value => <option key={value} value={value}>{value[0].toUpperCase()+value.slice(1)}</option>)}</select></label><div className="contact-picker">{c.contacts.map(id => <label className="contact-option" key={id}><input type="checkbox" checked={members.includes(id)} onChange={() => setMembers(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id])}/><ProfileAvatar profile={c.profiles[id]} small/><span>{personName(c.profiles[id])}</span></label>)}</div><div className="collab-actions"><button className="primary" disabled={busy || !name.trim() || !c.available}>{editing ? 'Save shared list' : 'Create shared list'}</button>{editing && <button type="button" className="secondary" onClick={() => begin(null)}>Cancel</button>}</div>{error && <p className="inline-error">{error}</p>}{message && <p className="inline-success">{message}</p>}</form>
+    <section className="task-section"><div className="section-row"><h2>Your shared lists</h2><span>{owned.length}</span></div><div className="shared-list-grid">{owned.map(card)}{!owned.length && <p className="empty-line">Create a list and choose the contacts who belong to it.</p>}</div></section>
+    {joined.length > 0 && <section className="task-section"><div className="section-row"><h2>Shared with you</h2><span>{joined.length}</span></div><div className="shared-list-grid">{joined.map(card)}</div></section>}
+  </>;
+}
+
+export function TaskAttachments({ c, taskId, ownerId, canUpload = false }) {
+  const [rows, setRows] = useState([]), [loading, setLoading] = useState(true);
+  const input = useRef(null); const { busy, error, run } = useAction();
+  const load = () => c.api.taskAttachments(taskId, ownerId).then(setRows).finally(() => setLoading(false));
+  useEffect(() => { let active = true; setLoading(true); c.api.taskAttachments(taskId, ownerId).then(data => { if (active) setRows(data); }).catch(() => { if (active) setRows([]); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [c.api, c.revision, taskId, ownerId]);
+  const upload = event => { const files = [...(event.target.files || [])]; event.target.value = ''; if (!files.length) return; run(async () => { for (const file of files) await c.api.uploadTaskAttachment(taskId, ownerId, file); await load(); await c.refresh(); }); };
+  return <div className="task-attachments"><div className="collab-card-head"><h3><Paperclip size={16}/> Attachments</h3>{canUpload && <><input ref={input} hidden type="file" multiple onChange={upload}/><button className="secondary" type="button" disabled={busy || !c.available} onClick={() => input.current?.click()}>{busy ? 'Uploading…' : 'Add files'}</button></>}</div><div className="attachment-list">{rows.map(row => <div className="attachment-card" key={row.id}><span className="attachment-icon"><File size={17}/></span><div className="attachment-meta"><strong>{row.name}</strong><span>{Math.max(1, Math.round(row.size_bytes / 1024))} KB · {personName(c.profiles[row.uploader_id])}</span></div><a className="attachment-open" href={row.url} target="_blank" rel="noreferrer">Open</a>{(row.owner_id === c.uid || row.uploader_id === c.uid) && <button className="icon tiny" aria-label={`Remove ${row.name}`} onClick={() => run(async () => { await c.api.deleteTaskAttachment(row); await load(); })}><X size={14}/></button>}</div>)}{!rows.length && <small className="field-help">{loading ? 'Loading attachments…' : 'No files attached yet.'}</small>}</div>{error && <p className="inline-error">{error}</p>}</div>;
 }
 
 export function AssignmentResponses({ c, assignment }) {
@@ -130,12 +160,11 @@ export function TaskCollaboration({ c, taskId }) {
   const { busy, error, run } = useAction();
   const rows = c.assignments.filter(a => String(a.task_id) === String(taskId));
   const invitations = c.emailInvites.filter(invite => String(invite.task_id) === String(taskId) && invite.status === 'pending');
-  if (!rows.length && !invitations.length) return null;
-  return <section className="task-collaboration"><h3>Assignments</h3>{invitations.map(invite => <div className="collab-card" key={invite.id}><div className="collab-person"><strong>{invite.invitee_email}</strong><small>Waiting for them to join JotRelay · expires {new Date(invite.expires_at).toLocaleString()}</small></div><Status status="invited"/><div className="collab-actions"><button className="text-btn" disabled={busy || !c.available} onClick={() => run(() => c.act('resendEmailInvite', invite))}>Resend</button><button className="text-btn danger-text" disabled={busy || !c.available} onClick={() => run(() => c.act('cancelEmailInvite', invite.id))}>Cancel</button></div></div>)}{rows.map(a => <div className="collab-card" key={a.id}><ProfileAvatar profile={c.profiles[a.assignee_id]} small/><div className="collab-person"><strong>{personName(c.profiles[a.assignee_id])}</strong><small>You own this task</small></div><Status status={a.status}/><OwnerAssignmentActions c={c} assignment={a}/></div>)}{error && <p className="inline-error" role="alert">{error}</p>}<p className="field-help">Assignment completion is separate from your task checkbox. Recurring tasks create a private next occurrence.</p>{rows.length > 0 && <><Comments c={c} taskId={taskId} assignments={rows}/><TaskActivity c={c} taskId={taskId}/></>}</section>;
+  return <section className="task-collaboration"><h3>Assignments</h3>{invitations.map(invite => <div className="collab-card" key={invite.id}><div className="collab-person"><strong>{invite.invitee_email}</strong><small>Waiting for them to join JotRelay · expires {new Date(invite.expires_at).toLocaleString()}</small></div><Status status="invited"/><div className="collab-actions"><button className="text-btn" disabled={busy || !c.available} onClick={() => run(() => c.act('resendEmailInvite', invite))}>Resend</button><button className="text-btn danger-text" disabled={busy || !c.available} onClick={() => run(() => c.act('cancelEmailInvite', invite.id))}>Cancel</button></div></div>)}{rows.map(a => <div className="collab-card" key={a.id}><ProfileAvatar profile={c.profiles[a.assignee_id]} small/><div className="collab-person"><strong>{personName(c.profiles[a.assignee_id])}</strong><small>You own this task</small></div><Status status={a.status}/><OwnerAssignmentActions c={c} assignment={a}/></div>)}{!rows.length && !invitations.length && <p className="field-help">This task is private until you add collaborators.</p>}{error && <p className="inline-error" role="alert">{error}</p>}<p className="field-help">Assignment completion is separate from your task checkbox. Recurring tasks carry active collaborators into the next occurrence as fresh assignments.</p><TaskAttachments c={c} taskId={taskId} ownerId={c.uid} canUpload/>{rows.length > 0 && <><Comments c={c} taskId={taskId} assignments={rows}/><TaskActivity c={c} taskId={taskId}/></>}</section>;
 }
 
 function Comments({ c, taskId, assignments }) {
-  const [rows, setRows] = useState([]), [body, setBody] = useState(''), [readError, setReadError] = useState(''), [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]), [body, setBody] = useState(''), [mentions, setMentions] = useState([]), [readError, setReadError] = useState(''), [loading, setLoading] = useState(true);
   const { busy, error, run } = useAction();
   useEffect(() => {
     let cancelled = false;
@@ -143,11 +172,17 @@ function Comments({ c, taskId, assignments }) {
     return () => { cancelled = true; };
   }, [c.api, c.revision, taskId]);
   const allowed = canComment(assignments, c.uid);
+  const people = [...new Set(assignments.flatMap(assignment => [assignment.owner_id, assignment.assignee_id]))].filter(id => id !== c.uid && c.profiles[id]);
+  const toggleMention = id => {
+    const selected = mentions.includes(id);
+    setMentions(current => selected ? current.filter(value => value !== id) : [...current, id]);
+    if (!selected) setBody(current => `${current}${current && !/\s$/.test(current) ? ' ' : ''}@${personName(c.profiles[id]).replace(/\s+/g, '')} `);
+  };
   const queued = c.outbox.filter(item => item.method === 'addComment' && String(item.args?.[0]) === String(taskId));
   return <div className="collab-comments"><h3>Comments</h3><p className="field-help">Visible to people assigned to this task and its owner.</p>
     {readError && <p role="alert" className="inline-error">{readError}</p>}
     <div className="comment-list">{queued.map(item => <article className="queued-comment" key={item.id}><div><strong>You</strong><time>Waiting to sync</time></div><p>{item.args[1]}</p><button className="text-btn" onClick={() => c.discardOutbox(item.id)}>Remove</button></article>)}{rows.map(row => <article key={row.id}><div><strong>{row.author_id === c.uid ? 'You' : personName(c.profiles[row.author_id])}</strong><time dateTime={row.created_at}>{new Date(row.created_at).toLocaleString()}</time></div><p>{row.body}</p></article>)}{!rows.length && !queued.length && !readError && <p className="collab-meta">{loading ? 'Loading comments…' : 'No comments yet.'}</p>}</div>
-    {allowed ? <form onSubmit={e => { e.preventDefault(); run(async () => { await c.act('addComment', taskId, body); setBody(''); }); }}><label>Add a comment<textarea value={body} maxLength={2000} onChange={e => setBody(e.target.value)} disabled={busy}/></label><div className="collab-actions"><small>{body.length}/2,000</small><button className="primary" disabled={busy || !body.trim()}>{c.online ? 'Post comment' : 'Queue comment'}</button></div></form> : <p className="field-help">Comments can be added after an assignment is accepted.</p>}
+    {allowed ? <form onSubmit={e => { e.preventDefault(); run(async () => { await c.act('addComment', taskId, body, mentions); setBody(''); setMentions([]); }); }}><label>Add a comment<textarea value={body} maxLength={2000} onChange={e => setBody(e.target.value)} disabled={busy} placeholder="Share an update or mention a collaborator…"/></label>{people.length > 0 && <div className="mention-picker"><small>Mention:</small>{people.map(id => <button type="button" key={id} className={mentions.includes(id) ? 'mention-chip active' : 'mention-chip'} onClick={() => toggleMention(id)}>@{personName(c.profiles[id])}</button>)}</div>}<div className="collab-actions"><small>{body.length}/2,000</small><button className="primary" disabled={busy || !body.trim()}>{c.online ? 'Post comment' : 'Queue comment'}</button></div><small className="field-help">Mentioned people receive a targeted notification, including lock-screen Web Push when enabled.</small></form> : <p className="field-help">Comments can be added after an assignment is accepted.</p>}
     {error && <p className="inline-error" role="alert">{error}</p>}
   </div>;
 }
@@ -180,7 +215,7 @@ export function AssignedDetail({ c, assignmentId, onClose }) {
     <div className="modal-head"><div><span className="eyebrow">ASSIGNED TO YOU</span><h2 id="assignment-title">{task?.title || 'Task details unavailable'}</h2></div><button className="icon" aria-label="Close assignment" onClick={onClose}><X/></button></div>
     <div className="form">{a ? <><div className="collab-actions"><span>Owner: {personName(c.profiles[a.owner_id])}</span><Status status={a.status}/></div>
       {task ? <><p className="collab-meta">{task.date ? `Due ${task.date} ${task.time?.slice(0, 5) || ''}` : 'No due date'} · {task.priority} priority · {task.category}</p>{task.note && <p className="shared-note">{task.note}</p>}{task.subtasks?.length > 0 && <ul className="shared-subtasks">{task.subtasks.map(s => <li key={s.id}>{s.done ? <Check size={14}/> : '○'} {s.text}</li>)}</ul>}<p className="field-help">The owner controls task details, subtasks and the task checkbox. You control your assignment status.</p></> : <p>Details may be unavailable because this assignment was declined, cancelled, or the task was removed.</p>}
-      <AssignmentResponses c={c} assignment={a}/><Comments c={c} taskId={a.task_id} assignments={[a]}/><TaskActivity c={c} taskId={a.task_id}/></> : <p>This assignment is no longer available.</p>}</div>
+      <AssignmentResponses c={c} assignment={a}/>{task && <TaskAttachments c={c} taskId={a.task_id} ownerId={a.owner_id} canUpload={['accepted','completed'].includes(a.status)}/>}<Comments c={c} taskId={a.task_id} assignments={[a]}/><TaskActivity c={c} taskId={a.task_id}/></> : <p>This assignment is no longer available.</p>}</div>
   </div></div>;
 }
 

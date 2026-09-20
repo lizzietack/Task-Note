@@ -1,8 +1,21 @@
-# JotRelay — Tasks & Notes v1.9
+# JotRelay — Tasks & Notes v2.0
 
 Updated from the supplied v1.4 project. Existing quick capture, recurrence, reminders, calendar, search, notes/checklists, pin/archive, file/image/audio attachments, voice recording, themes, PWA and private cloud sync remain available.
 
 ## What's new
+
+### v2.0 collaboration workspace
+
+- Create shared task lists and add accepted contacts as members.
+- Assign one task to several collaborators at once. Each person keeps an independent accept, decline and completion status.
+- Upload private task files that the owner and permitted collaborators can open. Files are limited to 10 MB each.
+- Mention task participants in comments. Mentions create targeted notifications and use the existing lock-screen Web Push delivery when the recipient enabled it.
+- Recurring delegated tasks carry their active collaborators into the next occurrence as fresh assignments.
+- Export an `.ics` calendar file or copy a private calendar subscription link for Apple Calendar, Google Calendar, Outlook and compatible apps.
+- Download account data, permanently delete the account and stored files, and read the Privacy Policy or Terms of Service at `/privacy` and `/terms`.
+- All collaboration permissions remain enforced in Supabase. The browser uses only the publishable key; no service-role key is included.
+
+Before deploying v2.0, run `DAYMARK_V2.0_COLLABORATION_WORKSPACE.sql` once after the v1.9 migration, deploy `supabase/functions/jotrelay-calendar-feed` with JWT verification disabled, and follow `SUPABASE_V2_SETUP.md`.
 
 ### v1.9 lock-screen notifications
 
@@ -82,7 +95,7 @@ Assignment completion and the owner's task checkbox remain separate. Recurring t
 
 ## Existing Supabase project
 
-**Do not rerun the v1.4 setup SQL to upgrade your installation.** For an existing v1.8 installation, run only the additive v1.9 migration. A new installation must apply the migrations in version order.
+**Do not rerun the v1.4 setup SQL to upgrade your installation.** For an existing v1.9 installation, run only the additive v2.0 migration. A new installation must apply the migrations in version order.
 
 Required: profiles (including email and avatar_url), text task IDs, connections, task_assignments, task_comments, notifications, daymark_email_invites, and the existing v1.4 tables/storage bucket. The client calls these exact functions:
 
@@ -99,6 +112,13 @@ Required: profiles (including email and avatar_url), text task IDs, connections,
 | daymark_cancel_email_invite | target_invite |
 | daymark_claim_email_invite | invite_token |
 | daymark_add_task_comment | target_task, comment_body, request_nonce |
+| daymark_add_task_comment_v2 | target_task, comment_body, request_nonce, mentioned_users |
+| daymark_set_task_collaborators | target_task, target_users, target_list |
+| daymark_save_shared_list | target_list, list_name, member_ids, list_color |
+| daymark_delete_shared_list | target_list |
+| daymark_get_calendar_token | rotate |
+| daymark_calendar_feed | feed_token; server feed only |
+| daymark_delete_account | confirm_text |
 | daymark_set_assignment_status | target_assignment, target_status |
 | daymark_queue_due_reminders | none; scheduled database job |
 | daymark_claim_notification_deliveries | worker_secret, batch_limit |

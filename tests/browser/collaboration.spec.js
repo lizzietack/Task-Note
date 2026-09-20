@@ -21,7 +21,7 @@ test('contacts accept requests and invite both existing and new users by email',
   await expect(page.getByText('Contact request sent.',{exact:false})).toBeVisible();
   await page.getByRole('button',{name:'Tasks',exact:true}).click();
   await page.getByRole('button',{name:'New task',exact:true}).click();
-  await expect(page.getByLabel('Assign to a contact').locator('option')).toHaveCount(3);
+  await expect(page.getByRole('group',{name:'Assign contacts'}).getByRole('checkbox')).toHaveCount(2);
   expect(errors).toEqual([]);
 });
 
@@ -30,15 +30,15 @@ test('owner creates and assigns once; failed assignment preserves the saved task
   await page.getByRole('button',{name:'Tasks',exact:true}).click();
   await page.getByRole('button',{name:'New task',exact:true}).click();
   await page.getByLabel('Task',{exact:true}).fill('Prepare monthly report');
-  await page.getByLabel('Assign to a contact').selectOption(OTHER);
+  await page.getByRole('group',{name:'Assign contacts'}).getByRole('checkbox',{name:/Herbert/}).check();
   state.failNextAssignment();
   await page.getByRole('button',{name:'Save task',exact:true}).click();
-  await expect(page.getByRole('alert')).toContainText('Task saved. Assignment was not confirmed');
+  await expect(page.getByRole('alert')).toContainText('Task saved, but collaboration setup was not fully confirmed');
   expect(state.db.tasks.filter(t=>t.title==='Prepare monthly report')).toHaveLength(1);
   await page.getByRole('button',{name:'Save task',exact:true}).click();
   await expect(page.getByLabel('Task',{exact:true})).toHaveCount(0);
   expect(state.db.tasks.filter(t=>t.title==='Prepare monthly report')).toHaveLength(1);
-  expect(state.db.task_assignments.filter(a=>a.id==='new-a')).toHaveLength(1);
+  expect(state.db.task_assignments.filter(a=>a.task_id===state.db.tasks.find(t=>t.title==='Prepare monthly report').id&&a.assignee_id===OTHER)).toHaveLength(1);
   await page.getByRole('button',{name:'Prepare monthly report',exact:false}).click();
   await expect(page.getByText('You own this task')).toBeVisible();
   await expect(page.getByText('pending',{exact:true})).toBeVisible();
@@ -88,9 +88,9 @@ test('owner can email a task to someone who has not joined JotRelay yet', async 
   await page.getByRole('button',{name:'Tasks',exact:true}).click();
   await page.getByRole('button',{name:'New task',exact:true}).click();
   await page.getByLabel('Task',{exact:true}).fill('Confirm venue booking');
-  await page.getByLabel('Invite by email').fill('remote@example.org');
+  await page.getByLabel('Invite additional people by email').fill('remote@example.org');
   await page.getByRole('button',{name:'Save task',exact:true}).click();
-  await expect(page.getByText('Invitation sent to remote@example.org',{exact:false})).toBeVisible();
+  await expect(page.locator('.app-notice')).toContainText('1 secure invitation was sent.');
   const invitation=state.db.daymark_email_invites.find(invite=>invite.invitee_email==='remote@example.org');
   expect(invitation?.task_id).toBeTruthy();
   expect(state.calls.some(call=>call.path.endsWith('/auth/v1/otp')&&call.body?.email==='remote@example.org')).toBe(true);
@@ -379,7 +379,7 @@ test('account export downloads personal and collaboration data without session c
   const download=await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^jotrelay-export-\d{4}-\d{2}-\d{2}\.json$/);
   const data=JSON.parse(await readFile(await download.path(),'utf8'));
-  expect(data.appVersion).toBe('1.9.0');
+  expect(data.appVersion).toBe('2.0.0');
   expect(data.account.id).toBe(ME);
   expect(data.tasks.some(task=>task.id==='owned-task')).toBe(true);
   expect(data.collaboration.assignments.some(assignment=>assignment.id==='a2')).toBe(true);
@@ -449,5 +449,49 @@ test('dark colored notes retain readable text contrast', async ({page})=>{
   expect(ratios.heading).toBeGreaterThanOrEqual(4.5); expect(ratios.body).toBeGreaterThanOrEqual(4.5);
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:'test-results/mobile-dark-note.png',fullPage:true,animations:'disabled'});
+  expect(state.errors).toEqual([]);
+});
+
+test('v2 shared lists assign multiple people and expose files, mentions, calendar and legal controls', async ({page})=>{
+  const state=await setup(page);
+  await page.getByRole('button',{name:'Contacts',exact:false}).click();
+  await page.getByRole('button',{name:'Accept',exact:true}).click();
+  await page.getByRole('button',{name:'Shared lists',exact:false}).click();
+  await page.getByLabel('Create a shared list').fill('Launch crew');
+  await page.locator('.shared-list-editor').getByRole('checkbox',{name:/Herbert/}).check();
+  await page.locator('.shared-list-editor').getByRole('checkbox',{name:/Nana/}).check();
+  await page.getByRole('button',{name:'Create shared list',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Launch crew'})).toBeVisible();
+  await expect(page.getByText('2 people',{exact:true})).toBeVisible();
+
+  await page.getByRole('button',{name:'Tasks',exact:true}).click();
+  await page.getByRole('button',{name:'New task',exact:true}).click();
+  await page.getByLabel('Task',{exact:true}).fill('Publish launch brief');
+  await page.getByLabel('Shared list').selectOption({label:'Launch crew'});
+  await page.locator('.task-file-picker input[type="file"]').setInputFiles({name:'brief.txt',mimeType:'text/plain',buffer:Buffer.from('Launch details')});
+  await page.getByRole('button',{name:'Save task',exact:true}).click();
+  await expect(page.getByLabel('Task',{exact:true})).toHaveCount(0);
+  const saved=state.db.tasks.find(task=>task.title==='Publish launch brief');
+  expect(state.db.task_assignments.filter(row=>row.task_id===saved.id)).toHaveLength(2);
+  expect(state.db.task_attachments.some(row=>row.task_id===saved.id&&row.name==='brief.txt')).toBe(true);
+
+  await page.getByRole('button',{name:'Review supplier payment',exact:false}).click();
+  await page.getByRole('button',{name:'@Herbert',exact:true}).click();
+  await page.getByLabel('Add a comment').fill('@Herbert Please review the receipt.');
+  await page.getByRole('button',{name:'Post comment'}).click();
+  expect(state.db.comment_mentions.some(row=>row.user_id===OTHER)).toBe(true);
+  expect(state.db.notifications.some(row=>row.user_id===OTHER&&row.type==='comment_mention')).toBe(true);
+  await page.getByRole('button',{name:'Close task editor'}).click();
+
+  await page.getByRole('button',{name:'Calendar',exact:true}).click();
+  const calendarDownload=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Export .ics',exact:true}).click();
+  expect((await calendarDownload).suggestedFilename()).toMatch(/^jotrelay-calendar-\d{4}-\d{2}-\d{2}\.ics$/);
+  await page.locator('.sidebar-profile').click();
+  await page.getByRole('button',{name:'Privacy Policy',exact:true}).click();
+  await expect(page).toHaveURL(/\/privacy$/);
+  await expect(page.getByRole('dialog',{name:'Privacy Policy'})).toBeVisible();
+  await page.getByRole('button',{name:'Close legal document'}).click();
+  await expect(page).toHaveURL(/\/$/);
   expect(state.errors).toEqual([]);
 });
